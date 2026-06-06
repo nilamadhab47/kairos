@@ -1,0 +1,19 @@
+# Railway deploys two services from this monorepo:
+#   1. api      \u2192 Fastify HTTP server (apps/server)
+#   2. worker   \u2192 BullMQ worker process (packages/queue)
+# Postgres and Redis are provisioned as Railway plugins.
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "pnpm install --frozen-lockfile && pnpm db:generate && pnpm --filter @kairo/server build"
+
+[deploy]
+startCommand = "pnpm --filter @kairo/db migrate:deploy && pnpm --filter @kairo/server start"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# To deploy the worker as a second Railway service, create a service that
+# overrides startCommand with:
+#   pnpm --filter @kairo/queue start

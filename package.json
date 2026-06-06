@@ -1,0 +1,35 @@
+{
+  "name": "kairo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kairo \u2014 smart event aggregator with AI-powered contextual notifications",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "dev:server": "turbo run dev --filter=@kairo/server",
+    "dev:mobile": "turbo run dev --filter=@kairo/mobile",
+    "dev:web": "turbo run dev --filter=@kairo/web",
+    "dev:worker": "turbo run dev --filter=@kairo/queue",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "pnpm --filter @kairo/db generate",
+    "db:migrate": "pnpm --filter @kairo/db migrate",
+    "db:migrate:deploy": "pnpm --filter @kairo/db migrate:deploy",
+    "db:studio": "pnpm --filter @kairo/db studio",
+    "db:reset": "pnpm --filter @kairo/db reset",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "turbo": "^2.2.3",
+    "typescript": "^5.6.3",
+    "prettier": "^3.3.3",
+    "@types/node": "^22.7.5"
+  }
+}
