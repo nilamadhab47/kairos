@@ -55,3 +55,7 @@ packages/db/prisma/migrations/dev.db*
 # Misc
 coverage/
 .nyc_output/
+
+# Google OAuth client downloads (never commit)
+client_secret*.json
+*.apps.googleusercontent.com.json

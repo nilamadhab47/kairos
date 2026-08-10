@@ -1,17 +1,17 @@
 {
   "expo": {
-    "name": "Kairo",
-    "slug": "kairo",
+    "name": "Kairos",
+    "slug": "kairos",
     "scheme": "kairo",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0B0B0F"
+      "backgroundColor": "#0B0E14"
     },
     "ios": {
       "supportsTablet": true,
@@ -22,9 +22,10 @@
     },
     "android": {
       "package": "app.kairo.mobile",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B0B0F"
+        "backgroundColor": "#0B0E14"
       }
     },
     "web": {
@@ -33,11 +34,21 @@
     },
     "plugins": [
       "expo-router",
+      "expo-dev-client",
       "expo-secure-store",
+      "expo-updates",
       [
         "expo-notifications",
         {
-          "color": "#0B0B0F"
+          "color": "#3ED5BB"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.9.25"
+          }
         }
       ]
     ],
@@ -49,8 +60,12 @@
         "origin": false
       },
       "eas": {
-        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+        "projectId": "e42b0c96-6152-46c7-97c5-ab663b102a0a"
       }
+    },
+    "runtimeVersion": "0.1.0",
+    "updates": {
+      "url": "https://u.expo.dev/e42b0c96-6152-46c7-97c5-ab663b102a0a"
     }
   }
 }

@@ -1,11 +1,12 @@
-// Central registry of BullMQ queue names. Keep these stable \u2014 they double as
-// Redis key prefixes.
+// Central registry of BullMQ queue names. Keep these stable — they double as
+// Redis key prefixes. (BullMQ disallows ':' in queue names.)
 export const QUEUE_NAMES = {
-  test: 'kairo:test',
-  morningBrief: 'kairo:morning-brief',
-  preEvent: 'kairo:pre-event',
-  liveNow: 'kairo:live-now',
-  ingestSports: 'kairo:ingest-sports',
+  test: 'kairo-test',
+  morningBrief: 'kairo-morning-brief',
+  preEvent: 'kairo-pre-event',
+  liveNow: 'kairo-deliver-push',
+  ingestSports: 'kairo-ingest-sports',
+  enrichLogos: 'kairo-enrich-logos',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];

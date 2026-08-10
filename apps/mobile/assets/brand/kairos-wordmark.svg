@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14.5 -14.5 477 129" role="img" aria-label="KAIROS">
+  <g fill="none" stroke="currentColor" stroke-width="14.5" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(0 0)">
+      <path d="M8 2 L8 98"/>
+      <path d="M60 2 L9 53"/>
+      <path d="M25 37 L64 98"/>
+    </g>
+    <g transform="translate(84 0)">
+      <path d="M4 98 L38 2 L72 98"/>
+      <path d="M18 64 L58 64"/>
+    </g>
+    <g transform="translate(176 0)">
+      <path d="M8 2 L8 98"/>
+    </g>
+    <g transform="translate(206 0)">
+      <path d="M8 2 L8 98"/>
+      <path d="M8 8 L36 8 C60 8 60 50 36 50 L8 50"/>
+      <path d="M34 50 L62 98"/>
+    </g>
+    <g transform="translate(288 0)">
+      <path d="M38 2 C17 2 7 23 7 50 C7 77 17 98 38 98 C59 98 69 77 69 50 C69 23 59 2 38 2 Z"/>
+    </g>
+    <g transform="translate(378 0)">
+      <path d="M58 15 C51 3 20 1 13 18 C6 35 26 42 37 46 C50 51 64 58 59 77 C54 97 20 100 9 85"/>
+    </g>
+  </g>
+</svg>

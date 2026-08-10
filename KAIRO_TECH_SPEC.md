@@ -3,6 +3,10 @@
 > "The right moment, not just the right time."
 > Smart event aggregator with AI-powered contextual notifications.
 
+> **Status (2026-08-07):** Sections **§2 (tech stack)** and **§11 (project structure)** are **superseded** by [`ARCHITECTURE.md`](./ARCHITECTURE.md) and [`ROADMAP.md`](./ROADMAP.md).
+> This document remains useful for product vision, domain schema (§7), and notification design — but do **not** treat PWA-primary, NextAuth, FCM, or Clerk as current decisions.
+> Client = **Expo**; Auth = **Better Auth** on Fastify; Push = **Expo Push** first.
+
 ---
 
 ## 1. Product overview

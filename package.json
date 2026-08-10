@@ -22,6 +22,13 @@
     "db:migrate:deploy": "pnpm --filter @kairo/db migrate:deploy",
     "db:studio": "pnpm --filter @kairo/db studio",
     "db:reset": "pnpm --filter @kairo/db reset",
+    "seed:sports": "pnpm --filter @kairo/server seed:sports",
+    "backfill:competitions": "pnpm --filter @kairo/server backfill:competitions",
+    "backfill:cricket-teams": "pnpm --filter @kairo/server backfill:cricket-teams",
+    "backfill:f1-constructors": "pnpm --filter @kairo/server backfill:f1-constructors",
+    "backfill:competition-country": "pnpm --filter @kairo/server backfill:competition-country",
+    "wipe:user-data": "pnpm --filter @kairo/server wipe:user-data",
+    "report:logo-coverage": "pnpm --filter @kairo/server report:logo-coverage",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
@@ -31,5 +38,19 @@
     "typescript": "^5.6.3",
     "prettier": "^3.3.3",
     "@types/node": "^22.7.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "better-auth>next": "-",
+      "zod": "^4.3.6"
+    },
+    "peerDependencyRules": {
+      "ignoreMissing": ["@better-auth/utils", "next"],
+      "allowedVersions": {
+        "react": "18 || 19",
+        "react-dom": "18 || 19",
+        "zod": "3 || 4"
+      }
+    }
   }
 }

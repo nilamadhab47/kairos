@@ -8,22 +8,32 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "lint": "echo \"(no lint configured)\""
+    "lint": "echo \"(no lint configured)\"",
+    "seed:sports": "tsx ../../packages/db/seed/sports.ts",
+    "backfill:competitions": "tsx ../../packages/db/scripts/backfill-competitions.ts",
+    "backfill:cricket-teams": "tsx ../../packages/db/scripts/backfill-cricket-teams.ts",
+    "backfill:f1-constructors": "tsx ../../packages/db/scripts/backfill-f1-constructors.ts",
+    "backfill:competition-country": "tsx ../../packages/db/scripts/backfill-competition-country.ts",
+    "wipe:user-data": "tsx ../../packages/db/scripts/wipe-user-data.ts",
+    "report:logo-coverage": "tsx ../../packages/db/scripts/logo-coverage.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.1",
+    "@better-auth/core": "1.6.26",
+    "@better-auth/utils": "0.4.2",
     "@fastify/cors": "^10.0.1",
-    "@fastify/jwt": "^9.0.1",
     "@fastify/sensible": "^6.0.1",
+    "@fastify/swagger": "^9.8.1",
     "@kairo/core": "workspace:*",
     "@kairo/db": "workspace:*",
     "@kairo/queue": "workspace:*",
+    "@kairo/sports": "workspace:*",
+    "@scalar/fastify-api-reference": "^1.64.1",
+    "better-auth": "^1.3.4",
     "dotenv": "^16.4.5",
     "fastify": "^5.1.0",
-    "google-auth-library": "^9.14.2",
+    "fastify-plugin": "^6.0.0",
     "pino-pretty": "^11.3.0",
-    "twilio": "^5.3.5",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",

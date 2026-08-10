@@ -2,15 +2,24 @@
 
 > The right moment, not just the right time.
 
-Smart event aggregator with AI-powered contextual notifications. See [KAIRO_TECH_SPEC.md](./KAIRO_TECH_SPEC.md) for the full product + architecture spec.
+Smart event aggregator with AI-powered contextual notifications.
 
-This repo is a Turborepo monorepo. **React Native (Expo) is the primary client**; Next.js exists only as the marketing site.
+**Source of truth**
+
+- Architecture & stack: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+- Milestones & sequencing: [`ROADMAP.md`](./ROADMAP.md)
+- Third-party credentials: [`docs/INTEGRATIONS.md`](./docs/INTEGRATIONS.md)
+- Design system + Figma audit: [`docs/DESIGN.md`](./docs/DESIGN.md) · [`docs/FIGMA_DESIGN_REVIEW.md`](./docs/FIGMA_DESIGN_REVIEW.md)
+- Mobile UI design prompt (Google Stitch): [`docs/STITCH_MOBILE_DESIGN_PROMPT.md`](./docs/STITCH_MOBILE_DESIGN_PROMPT.md)
+- Product / domain detail (partially historical): [`KAIRO_TECH_SPEC.md`](./KAIRO_TECH_SPEC.md)
+
+This repo is a Turborepo monorepo. **Expo is the primary client**; Next.js exists only as the marketing site. Auth is **Better Auth** (Google + Apple + email/password) on the Fastify API — not Clerk, not NextAuth.
 
 ```
 kairo/
 ├── apps/
 │   ├── mobile/      Expo SDK 52 + Expo Router + NativeWind  (consumer app)
-│   ├── server/      Fastify API + JWT auth                  (Railway)
+│   ├── server/      Fastify API + Better Auth + Scalar docs  (Railway)
 │   └── web/         Next.js 15 landing page
 └── packages/
     ├── db/          Prisma schema (PostgreSQL, 10 tables)
@@ -39,8 +48,9 @@ pnpm install
 
 # 2. Copy env template and fill it in
 cp .env.example .env
-# At minimum: JWT_SECRET, GOOGLE_CLIENT_ID (web), GOOGLE_IOS_CLIENT_ID,
-# GOOGLE_ANDROID_CLIENT_ID, EXPO_PUBLIC_API_URL
+# See ARCHITECTURE.md — Better Auth will own sessions.
+# For local infra at minimum: DATABASE_URL, REDIS_URL, EXPO_PUBLIC_API_URL
+# Auth secrets (Google/Apple OAuth client IDs, BETTER_AUTH_SECRET) when wiring M0.
 
 # 3. Boot Postgres + Redis
 pnpm docker:up
@@ -56,9 +66,12 @@ Verify the schema landed:
 pnpm db:studio           # opens Prisma Studio on http://localhost:5555
 ```
 
-You should see: `users`, `user_subscriptions`, `events`, `user_events`,
-`notifications`, `notification_preferences`, `habits`, `habit_completions`,
-`connected_sources`, `ai_copy_cache`.
+You should see Better Auth tables (`user`, `session`, `account`, `verification`) plus domain tables:
+`user_subscriptions`, `events`, `user_events`, `notifications`, `notification_preferences`,
+`habits`, `habit_completions`, `connected_sources`, `ai_copy_cache`, `user_devices`.
+
+API docs (Scalar): with the server running open [http://localhost:4000/api/docs](http://localhost:4000/api/docs).
+Third-party keys checklist: [`docs/INTEGRATIONS.md`](./docs/INTEGRATIONS.md).
 
 ---
 
@@ -86,14 +99,28 @@ pnpm dev:web
 
 ### Connecting the phone to your laptop API
 
-`localhost` does not resolve from your phone. Set `EXPO_PUBLIC_API_URL` to your
+`localhost` does not resolve from your phone. Set `EXPO_PUBLIC_API_URL` **and** `BETTER_AUTH_URL` to your
 laptop's LAN IP (Mac: `ipconfig getifaddr en0`):
 
 ```env
 EXPO_PUBLIC_API_URL=http://192.168.1.42:4000
+BETTER_AUTH_URL=http://192.168.1.42:4000
+BETTER_AUTH_SECRET=<at-least-32-char-secret>
 ```
 
-Restart `pnpm dev:mobile` after changing it.
+Also put the same values in a root `.env` (copy from `.env.example`).
+
+Restart `pnpm dev:mobile` / `pnpm dev:server` after changing them.
+
+### Android testing (primary)
+
+1. Start Docker Desktop, then `pnpm docker:up`
+2. `pnpm db:generate && pnpm db:migrate:deploy` (or `pnpm db:migrate` once)
+3. `pnpm dev:server` and `pnpm dev:worker`
+4. USB/wireless debug → `pnpm --filter @kairo/mobile android` (local native build)
+5. Or `pnpm dev:mobile` against an already-installed dev client
+
+Email auth works without Google/Apple keys. Google/Apple need OAuth client credentials in `.env`.
 
 ---
 
@@ -178,9 +205,12 @@ The worker terminal logs:
 
 ---
 
-## Next sprint
+## Current plan
 
-Now that the plumbing is verified, plan feature sprint 1 against
-[KAIRO_TECH_SPEC.md §5 (MVP)](./KAIRO_TECH_SPEC.md): onboarding flow,
-sport ingestion (Football + F1), Google Calendar sync, morning brief,
-pre-event push.
+Follow [`ROADMAP.md`](./ROADMAP.md):
+
+1. **M0** — Align docs/issues, soft-reset Expo shell, ship Better Auth  
+2. **M1** — Onboarding (timezone + sports)  
+3. **M2** — F1 ingest → Today → pre-event Expo Push  
+
+WhatsApp, Claude AI copy, and Google Calendar are explicitly later (M4).

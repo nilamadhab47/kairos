@@ -11,12 +11,14 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "echo \"(no lint configured)\""
+    "lint": "echo \"(no lint configured)\"",
+    "test:normalize": "tsx src/normalize.test.ts"
   },
   "dependencies": {
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "tsx": "^4.19.1",
     "typescript": "^5.6.3"
   }
 }

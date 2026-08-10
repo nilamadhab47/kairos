@@ -1,9 +1,9 @@
 # Image assets
 
-Drop the following PNGs in this folder before running `expo prebuild` or EAS builds:
+Placeholder solid PNGs are committed for local builds:
 
-- `icon.png` — 1024x1024
-- `splash.png` — 1284x2778 (or any large PNG, `resizeMode: contain`)
-- `adaptive-icon.png` — 1024x1024 (Android adaptive foreground)
+- `icon.png` — 1024×1024
+- `splash.png` — 1284×1284 (contain)
+- `adaptive-icon.png` — 1024×1024
 
-Until you add them, the Expo dev client will fall back to default placeholders.
+Replace with brand artwork before store submission.

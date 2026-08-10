@@ -1,6 +1,6 @@
-// Kairo Prisma schema \u2014 mirrors the SQL schema in KAIRO_TECH_SPEC.md \u00a77.
-// All 10 tables: users, user_subscriptions, events, user_events, notifications,
-// notification_preferences, habits, habit_completions, connected_sources, ai_copy_cache.
+// Kairo Prisma schema — Better Auth identity + domain tables.
+// Auth tables: user, session, account, verification
+// Domain: user_subscriptions, events, user_events, notifications, …
 
 generator client {
   provider = "prisma-client-js"
@@ -12,40 +12,151 @@ datasource db {
 }
 
 // ============================================
-// USERS
+// BETTER AUTH — user / session / account / verification
 // ============================================
 model User {
-  id             String   @id @default(uuid()) @db.Uuid
-  email          String   @unique @db.VarChar(255)
-  name           String?  @db.VarChar(255)
-  avatarUrl      String?  @map("avatar_url")
-  timezone       String   @default("Asia/Kolkata") @db.VarChar(50)
-  googleToken    Json?    @map("google_token")
-  onboardingDone Boolean  @default(false) @map("onboarding_done")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false) @map("email_verified")
+  image         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
+  // App profile fields (Better Auth additionalFields)
+  timezone       String  @default("Asia/Kolkata")
+  onboardingDone Boolean @default(false) @map("onboarding_done")
+  /// Encrypted Google Calendar tokens later — unused at auth time
+  googleToken    Json?   @map("google_token")
+
+  sessions               Session[]
+  accounts               Account[]
   subscriptions          UserSubscription[]
   userEvents             UserEvent[]
   notifications          Notification[]
   notificationPreference NotificationPreference?
   habits                 Habit[]
   connectedSources       ConnectedSource[]
+  devices                UserDevice[]
+  feedback               Feedback[]
 
-  @@map("users")
+  @@map("user")
 }
 
 // ============================================
-// SUBSCRIPTIONS (sports/teams the user follows)
+// FEEDBACK & ISSUE REPORTS
+// ============================================
+/// Structured user-submitted feedback and issue reports.
+/// - `kind = feedback`  → suggestion / like / dislike
+/// - `kind = issue`     → wrong score, wrong time, missing event, etc.
+/// Optional `matchId` / `eventId` links a report back to the specific
+/// object the user was looking at when they filed it — critical for
+/// debugging the sports ingestion pipeline.
+model Feedback {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  kind         String   @db.VarChar(20)   // feedback | issue
+  category     String   @db.VarChar(40)   // suggestion | wrong_score | wrong_time | ...
+  message      String
+  matchId      String?  @map("match_id")
+  eventId      String?  @map("event_id")
+  sportId      String?  @map("sport_id") @db.VarChar(20)
+  metadata     Json     @default("{}")
+  appVersion   String?  @map("app_version") @db.VarChar(40)
+  platform     String?  @db.VarChar(20)
+  timezone     String?  @db.VarChar(64)
+  status       String   @default("open") @db.VarChar(20) // open | in_review | resolved
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], name: "idx_feedback_user_recent")
+  @@index([kind, status], name: "idx_feedback_kind_status")
+  @@index([matchId], name: "idx_feedback_match")
+  @@map("feedback")
+}
+
+// ============================================
+// DEVICES (Expo push tokens)
+// ============================================
+model UserDevice {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  expoPushToken String @map("expo_push_token") @db.VarChar(255)
+  platform  String   @db.VarChar(20) // ios | android | web
+  deviceName String? @map("device_name") @db.VarChar(255)
+  isActive  Boolean  @default(true) @map("is_active")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, expoPushToken])
+  @@index([userId], name: "idx_devices_user")
+  @@index([expoPushToken], name: "idx_devices_token")
+  @@map("user_devices")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime @map("expires_at")
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ============================================
+// SUBSCRIPTIONS
 // ============================================
 model UserSubscription {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  category   String   @db.VarChar(20) // football | f1 | cricket | tennis
-  entityType String   @map("entity_type") @db.VarChar(20) // team | league | series | driver
-  entityId   String   @map("entity_id") @db.VarChar(100) // external API ID
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  category   String   @db.VarChar(20)
+  entityType String   @map("entity_type") @db.VarChar(20)
+  entityId   String   @map("entity_id") @db.VarChar(100)
   entityName String   @map("entity_name") @db.VarChar(255)
-  entityMeta Json?    @map("entity_meta") // logo_url, colors, abbreviation
+  entityMeta Json?    @map("entity_meta")
   isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -57,18 +168,18 @@ model UserSubscription {
 }
 
 // ============================================
-// EVENTS (normalized from all sources)
+// EVENTS
 // ============================================
 model Event {
-  id            String    @id @default(uuid()) @db.Uuid
-  source        String    @db.VarChar(20) // football | f1 | calendar | youtube | habit
+  id            String    @id @default(cuid())
+  source        String    @db.VarChar(20)
   category      String    @db.VarChar(20)
   sourceEventId String?   @map("source_event_id") @db.VarChar(255)
   title         String    @db.VarChar(500)
   subtitle      String?   @db.VarChar(500)
   startsAt      DateTime  @map("starts_at") @db.Timestamptz(6)
   endsAt        DateTime? @map("ends_at") @db.Timestamptz(6)
-  status        String    @default("upcoming") @db.VarChar(20) // upcoming | live | completed | cancelled
+  status        String    @default("upcoming") @db.VarChar(20)
   metadata      Json      @default("{}")
   contextTags   String[]  @default([]) @map("context_tags")
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -86,13 +197,10 @@ model Event {
   @@map("events")
 }
 
-// ============================================
-// USER_EVENTS (which events belong to which user)
-// ============================================
 model UserEvent {
-  id           String   @id @default(uuid()) @db.Uuid
-  userId       String   @map("user_id") @db.Uuid
-  eventId      String   @map("event_id") @db.Uuid
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  eventId      String   @map("event_id")
   isDismissed  Boolean  @default(false) @map("is_dismissed")
   isStarred    Boolean  @default(false) @map("is_starred")
   reminderSent Boolean  @default(false) @map("reminder_sent")
@@ -107,24 +215,21 @@ model UserEvent {
   @@map("user_events")
 }
 
-// ============================================
-// NOTIFICATIONS
-// ============================================
 model Notification {
-  id            String    @id @default(uuid()) @db.Uuid
-  userId        String    @map("user_id") @db.Uuid
-  eventId       String?   @map("event_id") @db.Uuid
-  type          String    @db.VarChar(20) // morning_brief | pre_event | live_now | habit
-  channel       String    @db.VarChar(20) // whatsapp | push | telegram
-  title         String    @db.VarChar(255)
-  body          String?   @db.Text
-  aiGenerated   Boolean   @default(false) @map("ai_generated")
-  status        String    @default("pending") @db.VarChar(20) // pending | sent | failed | read
-  scheduledFor  DateTime  @map("scheduled_for") @db.Timestamptz(6)
-  sentAt        DateTime? @map("sent_at") @db.Timestamptz(6)
-  readAt        DateTime? @map("read_at") @db.Timestamptz(6)
-  errorMsg      String?   @map("error_msg") @db.Text
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  eventId      String?   @map("event_id")
+  type         String    @db.VarChar(20)
+  channel      String    @db.VarChar(20)
+  title        String    @db.VarChar(255)
+  body         String?   @db.Text
+  aiGenerated  Boolean   @default(false) @map("ai_generated")
+  status       String    @default("pending") @db.VarChar(20)
+  scheduledFor DateTime  @map("scheduled_for") @db.Timestamptz(6)
+  sentAt       DateTime? @map("sent_at") @db.Timestamptz(6)
+  readAt       DateTime? @map("read_at") @db.Timestamptz(6)
+  errorMsg     String?   @map("error_msg") @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
@@ -135,13 +240,10 @@ model Notification {
   @@map("notifications")
 }
 
-// ============================================
-// NOTIFICATION PREFERENCES
-// ============================================
 model NotificationPreference {
-  id            String   @id @default(uuid()) @db.Uuid
-  userId        String   @unique @map("user_id") @db.Uuid
-  channels      Json     @default("{\"whatsapp\": true, \"push\": true, \"telegram\": false}")
+  id            String   @id @default(cuid())
+  userId        String   @unique @map("user_id")
+  channels      Json     @default("{\"whatsapp\": false, \"push\": true, \"telegram\": false}")
   briefTime     DateTime @default(dbgenerated("'08:00'::time")) @map("brief_time") @db.Time(6)
   maxDailyPush  Int      @default(4) @map("max_daily_push")
   dndStart      DateTime @default(dbgenerated("'23:00'::time")) @map("dnd_start") @db.Time(6)
@@ -156,21 +258,18 @@ model NotificationPreference {
   @@map("notification_preferences")
 }
 
-// ============================================
-// HABITS
-// ============================================
 model Habit {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String   @map("user_id") @db.Uuid
-  title          String   @db.VarChar(255)
-  scheduledTime  DateTime @map("scheduled_time") @db.Time(6)
-  durationMins   Int      @default(10) @map("duration_mins")
-  frequency      String   @default("daily") @db.VarChar(20) // daily | weekdays | weekends | custom
-  frequencyDays  Int[]    @default([1, 2, 3, 4, 5, 6, 7]) @map("frequency_days")
-  currentStreak  Int      @default(0) @map("current_streak")
-  longestStreak  Int      @default(0) @map("longest_streak")
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  title         String   @db.VarChar(255)
+  scheduledTime DateTime @map("scheduled_time") @db.Time(6)
+  durationMins  Int      @default(10) @map("duration_mins")
+  frequency     String   @default("daily") @db.VarChar(20)
+  frequencyDays Int[]    @default([1, 2, 3, 4, 5, 6, 7]) @map("frequency_days")
+  currentStreak Int      @default(0) @map("current_streak")
+  longestStreak Int      @default(0) @map("longest_streak")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   completions HabitCompletion[]
@@ -179,12 +278,9 @@ model Habit {
   @@map("habits")
 }
 
-// ============================================
-// HABIT COMPLETIONS
-// ============================================
 model HabitCompletion {
-  id            String   @id @default(uuid()) @db.Uuid
-  habitId       String   @map("habit_id") @db.Uuid
+  id            String   @id @default(cuid())
+  habitId       String   @map("habit_id")
   completedDate DateTime @map("completed_date") @db.Date
   completedAt   DateTime @default(now()) @map("completed_at") @db.Timestamptz(6)
 
@@ -195,18 +291,15 @@ model HabitCompletion {
   @@map("habit_completions")
 }
 
-// ============================================
-// CONNECTED SOURCES
-// ============================================
 model ConnectedSource {
-  id            String    @id @default(uuid()) @db.Uuid
-  userId        String    @map("user_id") @db.Uuid
-  sourceType    String    @map("source_type") @db.VarChar(20) // google_calendar | youtube | whatsapp
-  credentials   Json?
-  config        Json      @default("{}")
-  isActive      Boolean   @default(true) @map("is_active")
-  lastSyncedAt  DateTime? @map("last_synced_at") @db.Timestamptz(6)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  sourceType   String    @map("source_type") @db.VarChar(20)
+  credentials  Json?
+  config       Json      @default("{}")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastSyncedAt DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -214,13 +307,10 @@ model ConnectedSource {
   @@map("connected_sources")
 }
 
-// ============================================
-// AI COPY CACHE
-// ============================================
 model AiCopyCache {
-  id          String   @id @default(uuid()) @db.Uuid
-  eventId     String   @map("event_id") @db.Uuid
-  notifType   String   @map("notif_type") @db.VarChar(20) // pre_event | live_now
+  id          String   @id @default(cuid())
+  eventId     String   @map("event_id")
+  notifType   String   @map("notif_type") @db.VarChar(20)
   copyText    String   @map("copy_text") @db.VarChar(255)
   contextHash String   @map("context_hash") @db.VarChar(64)
   expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
@@ -231,4 +321,220 @@ model AiCopyCache {
   @@unique([eventId, notifType, contextHash])
   @@index([expiresAt], name: "idx_cache_expiry")
   @@map("ai_copy_cache")
+}
+
+// ============================================
+// NORMALIZED SPORTS DOMAIN MODELS
+// ============================================
+model Sport {
+  id        String   @id @db.VarChar(30) // football, cricket, f1, tennis, basketball
+  name      String   @db.VarChar(100)
+  iconUrl   String?  @map("icon_url")
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+
+  competitions Competition[]
+  teams        Team[]
+  players      Player[]
+  matches      Match[]
+
+  @@map("sports")
+}
+
+model Competition {
+  id          String   @id @default(cuid())
+  sportId     String   @map("sport_id") @db.VarChar(30)
+  name        String   @db.VarChar(255)
+  shortName   String?  @map("short_name") @db.VarChar(100)
+  /// Human display name after normalization (e.g. "The Hundred") —
+  /// strips year, gender, provider suffix. Falls back to `name`.
+  displayName String?  @map("display_name") @db.VarChar(255)
+  /// Optional gender qualifier: 'men' | 'women' | 'mixed'.
+  gender      String?  @db.VarChar(20)
+  /// Optional competition format:
+  ///   cricket: 'test' | 'odi' | 't20i' | 't20' | 'franchise' | 'international' | 'first-class' | 'list-a'
+  ///   football: 'league' | 'cup' | 'super-cup' | 'friendly'
+  ///   f1: 'championship'
+  ///   tennis: 'grand-slam' | 'atp-1000' | 'atp-500' | 'wta' | 'other'
+  format      String?  @db.VarChar(30)
+  country     String?  @db.VarChar(100)
+  logoUrl     String?  @map("logo_url")
+  season      String?  @db.VarChar(20)
+  /// Human season label, e.g. "2025/26" or "2026". Preserves the original
+  /// display form pulled from the provider; `season` remains machine-friendly.
+  seasonLabel String?  @map("season_label") @db.VarChar(50)
+  tier        Int      @default(1) // 1 = top-flight, 2 = second, etc.
+  isActive    Boolean  @default(true) @map("is_active")
+  providerRefs Json    @default("[]") @map("provider_refs") // [{provider, externalId}]
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sport     Sport      @relation(fields: [sportId], references: [id])
+  matches   Match[]
+  standings Standing[]
+  teams     TeamCompetition[]
+
+  @@unique([sportId, name, season])
+  @@index([sportId], name: "idx_competitions_sport")
+  @@index([sportId, isActive, tier], name: "idx_comp_sport_active_tier")
+  @@map("competitions")
+}
+
+model Team {
+  id           String   @id @default(cuid())
+  sportId      String   @map("sport_id") @db.VarChar(30)
+  name         String   @db.VarChar(255)
+  shortName    String?  @map("short_name") @db.VarChar(50)
+  /// Category of team entity — informs UI grouping and icon fallbacks.
+  /// 'club' | 'national' | 'franchise' | 'constructor'
+  type         String?  @db.VarChar(30)
+  country      String?  @db.VarChar(100)
+  logoUrl      String?  @map("logo_url")
+  providerRefs Json     @default("[]") @map("provider_refs")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sport         Sport             @relation(fields: [sportId], references: [id])
+  players       Player[]
+  competitions  TeamCompetition[]
+  homeMatches   Match[]           @relation("HomeTeam")
+  awayMatches   Match[]           @relation("AwayTeam")
+  standingRows  StandingRow[]
+
+  @@unique([sportId, name])
+  @@index([sportId], name: "idx_teams_sport")
+  @@map("teams")
+}
+
+model TeamCompetition {
+  teamId        String @map("team_id")
+  competitionId String @map("competition_id")
+
+  team        Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, competitionId])
+  @@map("team_competitions")
+}
+
+model Player {
+  id           String   @id @default(cuid())
+  sportId      String   @map("sport_id") @db.VarChar(30)
+  teamId       String?  @map("team_id")
+  name         String   @db.VarChar(255)
+  position     String?  @db.VarChar(50)
+  nationality  String?  @db.VarChar(100)
+  imageUrl     String?  @map("image_url")
+  providerRefs Json     @default("[]") @map("provider_refs")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sport Sport  @relation(fields: [sportId], references: [id])
+  team  Team?  @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([teamId], name: "idx_players_team")
+  @@index([sportId], name: "idx_players_sport")
+  @@map("players")
+}
+
+model Match {
+  id              String    @id @default(cuid())
+  sportId         String    @map("sport_id") @db.VarChar(30)
+  competitionId   String    @map("competition_id")
+  homeTeamId      String?   @map("home_team_id")
+  awayTeamId      String?   @map("away_team_id")
+  startsAt        DateTime  @map("starts_at") @db.Timestamptz(6)
+  status          String    @default("scheduled") @db.VarChar(20)
+  homeScore       Int?      @map("home_score")
+  awayScore       Int?      @map("away_score")
+  venue           String?   @db.VarChar(255)
+  round           String?   @db.VarChar(100)
+  metadata        Json      @default("{}")
+  providerRefs    Json      @default("[]") @map("provider_refs")
+  lastSyncedAt    DateTime  @default(now()) @map("last_synced_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sport       Sport        @relation(fields: [sportId], references: [id])
+  competition Competition  @relation(fields: [competitionId], references: [id])
+  homeTeam    Team?        @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: SetNull)
+  awayTeam    Team?        @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: SetNull)
+  matchEvents MatchEvent[]
+
+  @@unique([sportId, competitionId, homeTeamId, awayTeamId, startsAt])
+  @@index([startsAt], name: "idx_matches_starts")
+  @@index([status], name: "idx_matches_status")
+  @@index([sportId, startsAt], name: "idx_matches_sport_date")
+  @@index([competitionId], name: "idx_matches_competition")
+  @@map("matches")
+}
+
+model MatchEvent {
+  id         String   @id @default(cuid())
+  matchId    String   @map("match_id")
+  minute     Int?
+  type       String   @db.VarChar(30) // goal, card, substitution, var, penalty, wicket, etc.
+  team       String?  @db.VarChar(10) // home | away
+  playerName String?  @map("player_name") @db.VarChar(255)
+  detail     String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId], name: "idx_match_events_match")
+  @@map("match_events")
+}
+
+model Standing {
+  id            String   @id @default(cuid())
+  competitionId String   @map("competition_id")
+  season        String   @db.VarChar(20)
+  lastSyncedAt  DateTime @default(now()) @map("last_synced_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  competition Competition  @relation(fields: [competitionId], references: [id])
+  rows        StandingRow[]
+
+  @@unique([competitionId, season])
+  @@map("standings")
+}
+
+model StandingRow {
+  id             String @id @default(cuid())
+  standingId     String @map("standing_id")
+  teamId         String @map("team_id")
+  position       Int
+  played         Int    @default(0)
+  won            Int    @default(0)
+  drawn          Int    @default(0)
+  lost           Int    @default(0)
+  goalsFor       Int    @default(0) @map("goals_for")
+  goalsAgainst   Int    @default(0) @map("goals_against")
+  goalDifference Int    @default(0) @map("goal_difference")
+  points         Int    @default(0)
+  form           String? @db.VarChar(20)
+
+  standing Standing @relation(fields: [standingId], references: [id], onDelete: Cascade)
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([standingId, teamId])
+  @@index([standingId, position], name: "idx_standing_rows_pos")
+  @@map("standing_rows")
+}
+
+model Asset {
+  id         String   @id @default(cuid())
+  entityType String   @map("entity_type") @db.VarChar(30) // team, competition, player, sport
+  entityId   String   @map("entity_id")
+  assetType  String   @map("asset_type") @db.VarChar(30) // logo, badge, fanart, banner, icon
+  url        String   @db.Text
+  provider   String   @db.VarChar(50) // thesportsdb, api-football, etc.
+  width      Int?
+  height     Int?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([entityType, entityId, assetType, provider])
+  @@index([entityType, entityId], name: "idx_assets_entity")
+  @@map("assets")
 }

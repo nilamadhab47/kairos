@@ -1,37 +1,32 @@
 import fp from 'fastify-plugin';
-import jwt from '@fastify/jwt';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { loadEnv } from '../config/env.js';
-import type { JwtPayload } from '@kairo/core';
+import { fromNodeHeaders } from 'better-auth/node';
+import { auth, type SessionUser } from '../lib/auth.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
-}
-
-declare module '@fastify/jwt' {
-  interface FastifyJWT {
-    payload: JwtPayload;
-    user: JwtPayload;
+  interface FastifyRequest {
+    sessionUser: SessionUser | null;
   }
 }
 
 export default fp(async (app) => {
-  const env = loadEnv();
-
-  await app.register(jwt, {
-    secret: env.JWT_SECRET,
-  });
+  app.decorateRequest('sessionUser', null);
 
   app.decorate(
     'authenticate',
     async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
-      try {
-        await req.jwtVerify();
-      } catch {
-        reply.code(401).send({ error: 'unauthorized' });
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(req.headers),
+      });
+
+      if (!session?.user) {
+        return reply.code(401).send({ error: 'unauthorized' });
       }
+
+      req.sessionUser = session.user as SessionUser;
     },
   );
 });

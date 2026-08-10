@@ -16,7 +16,9 @@
   "dependencies": {
     "@kairo/core": "workspace:*",
     "@kairo/db": "workspace:*",
+    "@kairo/sports": "workspace:*",
     "bullmq": "^5.21.2",
+    "dotenv": "^16.6.1",
     "ioredis": "^5.4.1"
   },
   "devDependencies": {
