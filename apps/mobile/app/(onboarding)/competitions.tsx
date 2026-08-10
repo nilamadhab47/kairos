@@ -26,6 +26,8 @@ import {
   SearchInput,
   SPORT_LABELS,
   SportPillBar,
+  sportsNeedingCompetitions,
+  sportsSkippingCompetitions,
 } from '@/lib/onboarding-shared';
 
 /* -------------------------------------------------------------------------- */
@@ -65,13 +67,37 @@ export default function CompetitionsOnboarding() {
     () => (sportsParam ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     [sportsParam],
   );
+  // Football (etc.) stay here; cricket/F1 are carried through with empty comps.
+  const leagueSports = useMemo(() => sportsNeedingCompetitions(sportIds), [sportIds]);
+  const skipSports = useMemo(() => sportsSkippingCompetitions(sportIds), [sportIds]);
 
-  const [activeSport, setActiveSport] = useState(sportIds[0] ?? 'football');
+  const [activeSport, setActiveSport] = useState(leagueSports[0] ?? sportIds[0] ?? 'football');
   const [query_, setQueryText] = useState('');
   // sportId → Set of competitionIds
   const [picks, setPicks] = useState<Record<string, Set<string>>>({});
   const hydrated = useRef(false);
   const accent = theme.sport[activeSport as SportKey] ?? theme.color.accent;
+
+  const goTeams = useCallback(
+    (compsEncoded: string) => {
+      router.push({
+        pathname: '/(onboarding)/teams',
+        params: {
+          sports: sportIds.join(','),
+          comps: compsEncoded,
+          ...manageParams(mode),
+        },
+      });
+    },
+    [sportIds, mode],
+  );
+
+  // Nothing to pick here (cricket-only / F1-only) — jump to teams.
+  useEffect(() => {
+    if (leagueSports.length === 0 && sportIds.length > 0) {
+      goTeams(sportIds.map((s) => `${s}:`).join(','));
+    }
+  }, [leagueSports.length, sportIds, goTeams]);
 
   const summary = useQuery({
     queryKey: ['subscriptions', 'summary'],
@@ -82,22 +108,21 @@ export default function CompetitionsOnboarding() {
 
   useEffect(() => {
     if (!manage || !summary.data || hydrated.current) return;
-    // Only hydrate picks for sports in this edit session.
     const fromSummary = compsBySportFromSummary(summary.data);
     const next: Record<string, Set<string>> = {};
-    for (const sid of sportIds) {
+    for (const sid of leagueSports) {
       next[sid] = fromSummary[sid] ?? new Set();
     }
     setPicks(next);
     hydrated.current = true;
-  }, [manage, summary.data, sportIds]);
+  }, [manage, summary.data, leagueSports]);
 
-  // Keep activeSport valid if sports param changes.
+  // Keep activeSport valid within league sports only.
   useEffect(() => {
-    if (sportIds.length && !sportIds.includes(activeSport)) {
-      setActiveSport(sportIds[0]!);
+    if (leagueSports.length && !leagueSports.includes(activeSport)) {
+      setActiveSport(leagueSports[0]!);
     }
-  }, [sportIds, activeSport]);
+  }, [leagueSports, activeSport]);
 
   const query = useQuery({
     queryKey: ['catalog', 'competitions', activeSport],
@@ -105,7 +130,7 @@ export default function CompetitionsOnboarding() {
       api<CompetitionsResponse>(
         `/api/catalog/competitions?category=${encodeURIComponent(activeSport)}&limit=60&dedupeBySeason=true`,
       ),
-    enabled: Boolean(activeSport),
+    enabled: Boolean(activeSport) && leagueSports.includes(activeSport),
     staleTime: 60_000,
   });
 
@@ -125,34 +150,28 @@ export default function CompetitionsOnboarding() {
     [picks],
   );
 
-  const onContinue = useCallback(() => {
-    haptics.success();
-    const encoded = sportIds
+  const encodeComps = useCallback(() => {
+    return sportIds
       .map((sid) => {
+        if (skipSports.includes(sid)) return `${sid}:`;
         const bucket = [...(picks[sid] ?? [])];
         return `${sid}:${bucket.join('|')}`;
       })
       .join(',');
-    router.push({
-      pathname: '/(onboarding)/teams',
-      params: {
-        sports: sportIds.join(','),
-        comps: encoded,
-        ...manageParams(mode),
-      },
-    });
-  }, [picks, sportIds, mode]);
+  }, [sportIds, skipSports, picks]);
+
+  const onContinue = useCallback(() => {
+    haptics.success();
+    goTeams(encodeComps());
+  }, [goTeams, encodeComps]);
 
   const onSkip = useCallback(() => {
-    router.push({
-      pathname: '/(onboarding)/teams',
-      params: {
-        sports: sportIds.join(','),
-        comps: sportIds.map((s) => `${s}:`).join(','),
-        ...manageParams(mode),
-      },
-    });
-  }, [sportIds, mode]);
+    goTeams(
+      sportIds
+        .map((s) => `${s}:`)
+        .join(','),
+    );
+  }, [goTeams, sportIds]);
 
   const activePicks = picks[activeSport] ?? new Set<string>();
 
@@ -229,10 +248,10 @@ export default function CompetitionsOnboarding() {
             : 'Pick the competitions that matter. Skip a sport to follow it whole.'}
         </Animated.Text>
 
-        {sportIds.length > 1 ? (
+        {leagueSports.length > 1 ? (
           <View style={{ marginTop: spacing[6], marginHorizontal: -spacing[5] }}>
             <SportPillBar
-              sports={sportIds}
+              sports={leagueSports}
               active={activeSport}
               onChange={(id) => {
                 haptics.select();

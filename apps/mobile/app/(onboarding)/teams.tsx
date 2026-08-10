@@ -27,7 +27,9 @@ import {
   pinSelectedFirst,
   SearchInput,
   SPORT_LABELS,
+  SPORT_ONBOARDING,
   SportPillBar,
+  sportTeamType,
   teamsBySportFromSummary,
 } from '@/lib/onboarding-shared';
 
@@ -105,12 +107,13 @@ export default function TeamsOnboarding() {
   }, [sportIds, activeSport]);
 
   // Fetch teams per sport. If comps chosen for that sport, one query per comp
-  // (so lists stay focused). Otherwise a broad "hasLogo" list. Cricket falls
-  // back to national when no comp filter is present (avoids Ranji noise).
+  // (so lists stay focused). Otherwise use the sport's preferred team type
+  // (cricket → national sides, F1 → constructors).
   const compsForActive = useMemo(
     () => [...(compsBySport[activeSport] ?? [])],
     [compsBySport, activeSport],
   );
+  const preferredType = sportTeamType(activeSport);
 
   const teamQueries = useQueries({
     queries: compsForActive.length
@@ -126,16 +129,14 @@ export default function TeamsOnboarding() {
         }))
       : [
           {
-            queryKey: ['catalog', 'teams', activeSport, 'broad'] as const,
+            queryKey: ['catalog', 'teams', activeSport, preferredType ?? 'broad'] as const,
             queryFn: () => {
               const params = new URLSearchParams({
                 category: activeSport,
                 limit: '120',
                 hasLogo: 'true',
               });
-              // For cricket, without a comp filter, default to national sides —
-              // matches the brief's "internationals" default.
-              if (activeSport === 'cricket') params.set('type', 'national');
+              if (preferredType) params.set('type', preferredType);
               return api<TeamsResponse>(`/api/catalog/teams?${params}`);
             },
             staleTime: 60_000,
@@ -281,6 +282,9 @@ export default function TeamsOnboarding() {
   }, [picks, sportIds, compsParam, mode]);
 
   const goSkip = useCallback(() => {
+    // Empty teams for a sport → review writes a whole-sport follow when that
+    // sport also has no competitions (cricket/F1 path). Perfect for "just
+    // give me Formula 1 weekends".
     router.push({
       pathname: '/(onboarding)/review',
       params: {
@@ -291,6 +295,60 @@ export default function TeamsOnboarding() {
       },
     });
   }, [sportIds, compsParam, mode]);
+
+  // F1 with no constructors in catalog: skip straight to whole-series follow.
+  const f1Fallback =
+    sportIds.length === 1 &&
+    sportIds[0] === 'f1' &&
+    Boolean(SPORT_ONBOARDING.f1?.fallbackWholeSport) &&
+    !anyLoading &&
+    !anyError &&
+    totalVisible === 0 &&
+    !manage;
+
+  useEffect(() => {
+    if (!f1Fallback) return;
+    goSkip();
+  }, [f1Fallback, goSkip]);
+
+  const headline = useMemo(() => {
+    if (activeSport === 'cricket') {
+      return manage
+        ? { a: 'YOUR', b: 'SIDES' as string | null }
+        : { a: 'WHICH', b: 'SIDES?' };
+    }
+    if (activeSport === 'f1') {
+      return manage
+        ? { a: 'YOUR', b: 'TEAMS' }
+        : { a: 'WHO DO YOU', b: 'CHEER FOR?' };
+    }
+    return manage
+      ? { a: 'YOUR', b: 'TEAMS' }
+      : { a: 'WHO ARE', b: 'YOUR TEAMS?' };
+  }, [activeSport, manage]);
+
+  const subcopy = useMemo(() => {
+    if (activeSport === 'cricket') {
+      return manage
+        ? 'International sides sit at the top. You’ll get every match they play.'
+        : 'Pick India, Australia, England… you’ll get every match they play.';
+    }
+    if (activeSport === 'f1') {
+      return manage
+        ? 'Constructors sit at the top. Skip to follow every race weekend.'
+        : 'Pick a constructor — or skip to follow every Formula 1 weekend.';
+    }
+    return manage
+      ? 'Saved teams sit at the top. Add or remove, then review.'
+      : "Follow the crests you rearrange your day around. Skip if you don't have a favourite.";
+  }, [activeSport, manage]);
+
+  const searchPlaceholder =
+    activeSport === 'cricket'
+      ? 'Search international sides…'
+      : activeSport === 'f1'
+        ? 'Search constructors…'
+        : `Search ${SPORT_LABELS[activeSport] ?? activeSport} teams…`;
 
   return (
     <View style={[styles.root, { backgroundColor: theme.color.bg }]}>
@@ -307,25 +365,16 @@ export default function TeamsOnboarding() {
           entering={FadeInDown.duration(reduce ? 0 : 340)}
           style={styles.headlineBlock}
         >
-          {manage ? (
-            <>
-              <Text style={[styles.h1, { color: theme.color.text }]}>YOUR</Text>
-              <Text style={[styles.h1, { color: accent }]}>TEAMS</Text>
-            </>
-          ) : (
-            <>
-              <Text style={[styles.h1, { color: theme.color.text }]}>WHO ARE</Text>
-              <Text style={[styles.h1, { color: accent }]}>YOUR TEAMS?</Text>
-            </>
-          )}
+          <Text style={[styles.h1, { color: theme.color.text }]}>{headline.a}</Text>
+          {headline.b ? (
+            <Text style={[styles.h1, { color: accent }]}>{headline.b}</Text>
+          ) : null}
         </Animated.View>
         <Animated.Text
           entering={FadeInDown.delay(reduce ? 0 : 120).duration(reduce ? 0 : 300)}
           style={[styles.sub, { color: theme.color.textMuted }]}
         >
-          {manage
-            ? 'Saved teams sit at the top. Add or remove, then review.'
-            : "Follow the crests you rearrange your day around. Skip if you don't have a favourite."}
+          {subcopy}
         </Animated.Text>
 
         {sportIds.length > 1 ? (
@@ -347,7 +396,7 @@ export default function TeamsOnboarding() {
           <SearchInput
             value={query_}
             onChangeText={setQueryText}
-            placeholder={`Search ${SPORT_LABELS[activeSport] ?? activeSport} teams…`}
+            placeholder={searchPlaceholder}
           />
         </View>
 
@@ -438,11 +487,23 @@ export default function TeamsOnboarding() {
         ]}
       >
         <Text style={[styles.helper, { color: theme.color.textMuted }]}>
-          {totalPicks === 0
-            ? "Skip to follow entire competitions without picking sides."
-            : totalPicks === 1
-              ? '1 team selected · one to watch.'
-              : `${totalPicks} teams selected.`}
+          {activeSport === 'cricket'
+            ? totalPicks === 0
+              ? 'Pick at least one side — you’ll get every match they play.'
+              : totalPicks === 1
+                ? '1 side selected · every match of theirs.'
+                : `${totalPicks} sides selected.`
+            : activeSport === 'f1'
+              ? totalPicks === 0
+                ? 'Skip to follow every Formula 1 race weekend.'
+                : totalPicks === 1
+                  ? '1 constructor selected.'
+                  : `${totalPicks} constructors selected.`
+              : totalPicks === 0
+                ? 'Skip to follow entire competitions without picking sides.'
+                : totalPicks === 1
+                  ? '1 team selected · one to watch.'
+                  : `${totalPicks} teams selected.`}
         </Text>
         <View style={styles.ctaRow}>
           <SkipButton onPress={goSkip} />

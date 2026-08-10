@@ -45,6 +45,63 @@ export function manageParams(mode?: string | string[]): { mode?: string } {
   return isManageMode(mode) ? { mode: 'manage' } : {};
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Per-sport onboarding shape                                                */
+/* -------------------------------------------------------------------------- */
+
+export type SportOnboardingConfig = {
+  /** Show the leagues/cups picker. Football yes; cricket/F1 no. */
+  competitions: boolean;
+  /** Show the teams/constructors/sides picker. */
+  teams: boolean;
+  /** Optional catalog `type` filter when listing teams. */
+  teamType?: 'club' | 'national' | 'franchise' | 'constructor';
+  /**
+   * When the teams list is empty (or user skips), save a whole-sport follow
+   * so they still get the calendar (e.g. Formula 1 weekends).
+   */
+  fallbackWholeSport?: boolean;
+};
+
+/**
+ * Sport-specific follow UX.
+ * - Football: leagues → clubs
+ * - Cricket: skip leagues → international sides (all their matches)
+ * - F1: skip leagues → constructors; if none, whole Formula 1
+ */
+export const SPORT_ONBOARDING: Record<string, SportOnboardingConfig> = {
+  football: { competitions: true, teams: true },
+  cricket: { competitions: false, teams: true, teamType: 'national' },
+  f1: {
+    competitions: false,
+    teams: true,
+    teamType: 'constructor',
+    fallbackWholeSport: true,
+  },
+  tennis: { competitions: true, teams: false },
+  basketball: { competitions: true, teams: true },
+  hockey: { competitions: true, teams: true },
+  baseball: { competitions: true, teams: true },
+};
+
+export function sportNeedsCompetitions(sportId: string): boolean {
+  return SPORT_ONBOARDING[sportId]?.competitions ?? true;
+}
+
+export function sportTeamType(
+  sportId: string,
+): SportOnboardingConfig['teamType'] | undefined {
+  return SPORT_ONBOARDING[sportId]?.teamType;
+}
+
+export function sportsNeedingCompetitions(sportIds: string[]): string[] {
+  return sportIds.filter(sportNeedsCompetitions);
+}
+
+export function sportsSkippingCompetitions(sportIds: string[]): string[] {
+  return sportIds.filter((id) => !sportNeedsCompetitions(id));
+}
+
 /**
  * Put selected items first. Optionally merge in extras (e.g. already-followed
  * comps/teams that aren't in the current catalog page) so they stay visible.

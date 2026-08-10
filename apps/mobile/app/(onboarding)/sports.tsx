@@ -23,6 +23,7 @@ import {
   manageParams,
   OnboardingTopBar,
   sportIdsFromSummary,
+  sportsNeedingCompetitions,
 } from '@/lib/onboarding-shared';
 
 /* -------------------------------------------------------------------------- */
@@ -47,9 +48,9 @@ type CatalogResponse = { sports: CatalogSport[] };
  * competitions in this screen; we describe *scope* rather than fabricate names.
  */
 const HINTS: Record<string, string> = {
-  football: 'Leagues, cups & internationals',
-  cricket: 'Internationals, IPL & tours',
-  f1: 'Every race weekend',
+  football: 'Leagues, cups & clubs',
+  cricket: 'International sides you follow',
+  f1: 'Race weekends · pick constructors or follow all',
   tennis: 'Grand Slams · ATP · WTA',
   basketball: 'NBA & internationals',
   hockey: 'NHL & internationals',
@@ -114,9 +115,25 @@ export default function SportsOnboarding() {
   const onContinue = useCallback(() => {
     if (!canContinue) return;
     haptics.success();
+    const all = [...selected];
+    const leagueSports = sportsNeedingCompetitions(all);
+    // Cricket / F1 skip leagues — go straight to sides / constructors.
+    // Mixed picks (e.g. football + cricket) still hit competitions first for
+    // the league sports; skipped sports travel along with empty comps.
+    if (leagueSports.length === 0) {
+      router.push({
+        pathname: '/(onboarding)/teams',
+        params: {
+          sports: all.join(','),
+          comps: all.map((s) => `${s}:`).join(','),
+          ...manageParams(mode),
+        },
+      });
+      return;
+    }
     router.push({
       pathname: '/(onboarding)/competitions',
-      params: { sports: [...selected].join(','), ...manageParams(mode) },
+      params: { sports: all.join(','), ...manageParams(mode) },
     });
   }, [canContinue, selected, mode]);
 
