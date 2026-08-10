@@ -3,12 +3,532 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  --bg: #05070a;
+  --surface: #0d1214;
+  --line: rgba(245, 247, 250, 0.08);
+  --text: #f5f7fa;
+  --muted: #8b93a7;
+  --accent: #3ed5bb;
 }
 
-html,
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  background: #0b0b0f;
-  color: #f5f5f7;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: rgba(62, 213, 187, 0.28);
+  color: #f5f7fa;
+}
+
+/* ------------------------------------------------------------------ */
+/* Type utilities                                                      */
+/* ------------------------------------------------------------------ */
+
+.eyebrow {
+  @apply font-sans text-[11px] font-bold uppercase tracking-[0.22em] text-brand-300;
+}
+
+.display-xl {
+  @apply font-display font-bold tracking-[-0.04em] leading-[0.98];
+  font-size: clamp(3rem, 7.5vw, 6.25rem);
+}
+
+.display-lg {
+  @apply font-display font-bold tracking-[-0.035em] leading-[1.02];
+  font-size: clamp(2.25rem, 5vw, 4rem);
+}
+
+.display-md {
+  @apply font-display font-semibold tracking-[-0.02em] leading-[1.12];
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
+}
+
+.lede {
+  @apply text-paper-400 leading-relaxed;
+  font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+}
+
+/* Editorial section index — "01" + rule + label */
+.index-row {
+  @apply flex items-center gap-4;
+}
+
+.index-num {
+  @apply font-display text-[13px] font-bold tracking-[0.08em] text-brand-300;
+  font-variant-numeric: tabular-nums;
+}
+
+.index-rule {
+  @apply h-px flex-1;
+  background: linear-gradient(90deg, rgba(245, 247, 250, 0.16), rgba(245, 247, 250, 0.03));
+}
+
+.index-label {
+  @apply font-sans text-[11px] font-bold uppercase tracking-[0.22em] text-paper-300;
+}
+
+/* Oversized ghost numerals (features / how-it-works) */
+.ghost-num {
+  @apply font-display font-bold leading-none;
+  font-size: clamp(3.5rem, 7vw, 6rem);
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(245, 247, 250, 0.16);
+  font-variant-numeric: tabular-nums;
+  transition: -webkit-text-stroke-color 0.4s ease, color 0.4s ease;
+}
+
+/* Giant footer wordmark */
+.wordmark-massive {
+  @apply block select-none text-center font-display font-bold uppercase leading-[0.9];
+  font-size: clamp(4rem, 14.5vw, 13.5rem);
+  letter-spacing: 0.04em;
+  background: linear-gradient(180deg, rgba(245, 247, 250, 0.16), rgba(245, 247, 250, 0.02));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Buttons                                                             */
+/* ------------------------------------------------------------------ */
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2.5 rounded-full font-sans text-[15px] font-semibold transition-all duration-200;
+  padding: 0.9rem 1.75rem;
+}
+
+.btn-primary {
+  @apply btn bg-brand-300 text-ink-900;
+}
+
+.btn-primary:hover {
+  @apply bg-brand-200;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 32px rgba(62, 213, 187, 0.25);
+}
+
+.btn-ghost {
+  @apply btn text-paper-900;
+  background: rgba(245, 247, 250, 0.06);
+  border: 1px solid var(--line);
+}
+
+.btn-ghost:hover {
+  background: rgba(245, 247, 250, 0.1);
+  border-color: rgba(245, 247, 250, 0.16);
+}
+
+.btn-store {
+  @apply btn cursor-default select-none text-paper-600;
+  background: rgba(245, 247, 250, 0.04);
+  border: 1px solid var(--line);
+  padding: 0.8rem 1.4rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Surfaces                                                            */
+/* ------------------------------------------------------------------ */
+
+.card {
+  @apply rounded-card;
+  background: linear-gradient(180deg, rgba(245, 247, 250, 0.04), rgba(245, 247, 250, 0.015));
+  border: 1px solid var(--line);
+}
+
+.hairline {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(245, 247, 250, 0.12), transparent);
+}
+
+.pill {
+  @apply inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold tracking-wide;
+  background: rgba(245, 247, 250, 0.05);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Kairos mark animation                                               */
+/* ------------------------------------------------------------------ */
+
+@keyframes mark-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.55) rotate(-50deg);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes mark-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.035);
+    opacity: 0.92;
+  }
+}
+
+@keyframes mark-drift {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes stream-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.mark-enter {
+  animation: mark-enter 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.mark-breathe {
+  animation: mark-breathe 6s ease-in-out 1.6s infinite;
+}
+
+.mark-drift {
+  animation: mark-drift 180s linear infinite;
+  transform-origin: center;
+}
+
+.mark-stream {
+  animation: stream-in 0.5s ease-out both;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ambient glow                                                        */
+/* ------------------------------------------------------------------ */
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.08);
+  }
+}
+
+.glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  pointer-events: none;
+  animation: glow-pulse 9s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------ */
+/* Scroll reveal                                                       */
+/* ------------------------------------------------------------------ */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.8s cubic-bezier(0.2, 0.65, 0.25, 1),
+    transform 0.8s cubic-bezier(0.2, 0.65, 0.25, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ------------------------------------------------------------------ */
+/* Phone mockup                                                        */
+/* ------------------------------------------------------------------ */
+
+.phone {
+  @apply relative overflow-hidden;
+  border-radius: 44px;
+  border: 1px solid rgba(245, 247, 250, 0.14);
+  background: #05070a;
+  box-shadow:
+    0 0 0 10px rgba(13, 18, 20, 0.9),
+    0 0 0 11px rgba(245, 247, 250, 0.07),
+    0 40px 90px -30px rgba(0, 0, 0, 0.8);
+}
+
+.phone img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.phone-tilt {
+  transition: transform 0.6s cubic-bezier(0.2, 0.65, 0.25, 1);
+}
+
+@media (hover: hover) {
+  .phone-tilt:hover {
+    transform: translateY(-8px) rotate(-0.5deg);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Nav                                                                 */
+/* ------------------------------------------------------------------ */
+
+.nav-blur {
+  background: rgba(5, 7, 10, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--line);
+}
+
+/* ------------------------------------------------------------------ */
+/* Legal prose                                                         */
+/* ------------------------------------------------------------------ */
+
+.prose-legal h2 {
+  @apply font-display text-xl font-semibold text-paper-900 mt-12 mb-4 tracking-tight;
+}
+
+.prose-legal h3 {
+  @apply font-display text-base font-semibold text-paper-900 mt-8 mb-3;
+}
+
+.prose-legal p,
+.prose-legal li {
+  @apply text-[15px] leading-relaxed text-paper-400;
+}
+
+.prose-legal p {
+  @apply mb-4;
+}
+
+.prose-legal ul {
+  @apply mb-4 list-disc space-y-2 pl-5;
+}
+
+.prose-legal a {
+  @apply text-brand-300 underline decoration-brand-300/40 underline-offset-2 hover:text-brand-200;
+}
+
+.prose-legal strong {
+  @apply font-semibold text-paper-600;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lenis                                                               */
+/* ------------------------------------------------------------------ */
+
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Custom cursor                                                       */
+/* ------------------------------------------------------------------ */
+
+html.has-custom-cursor,
+html.has-custom-cursor a,
+html.has-custom-cursor button {
+  cursor: none;
+}
+
+.cursor-dot,
+.cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 120;
+  pointer-events: none;
+  border-radius: 9999px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.cursor-dot {
+  width: 6px;
+  height: 6px;
+  background: #3ed5bb;
+}
+
+.cursor-ring {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(62, 213, 187, 0.5);
+  transition:
+    opacity 0.3s ease,
+    transform 0.05s linear;
+}
+
+/* ------------------------------------------------------------------ */
+/* Device frame (live phone previews)                                  */
+/* ------------------------------------------------------------------ */
+
+.device {
+  position: relative;
+  border-radius: 46px;
+  background: #05070a;
+  border: 1px solid rgba(245, 247, 250, 0.14);
+  box-shadow:
+    0 0 0 9px rgba(13, 18, 20, 0.92),
+    0 0 0 10px rgba(245, 247, 250, 0.07),
+    0 40px 90px -30px rgba(0, 0, 0, 0.8);
+}
+
+.device-screen {
+  position: absolute;
+  inset: 5px;
+  border-radius: 41px;
+  overflow: hidden;
+  background: #05070a;
+  display: flex;
+  flex-direction: column;
+}
+
+.device-island {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 76px;
+  height: 21px;
+  border-radius: 12px;
+  background: #010203;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.device-homebar {
+  position: absolute;
+  bottom: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 84px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(245, 247, 250, 0.3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Branded shimmer (pending testimonials)                              */
+/* ------------------------------------------------------------------ */
+
+@keyframes shimmer-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    rgba(245, 247, 250, 0.05) 42%,
+    rgba(62, 213, 187, 0.14) 50%,
+    rgba(245, 247, 250, 0.05) 58%
+  );
+  background-size: 220% 100%;
+  animation: shimmer-sweep 2.6s linear infinite;
+}
+
+/* ------------------------------------------------------------------ */
+/* Animated gradient text (final CTA)                                  */
+/* ------------------------------------------------------------------ */
+
+@keyframes text-sweep {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.text-sweep {
+  background: linear-gradient(90deg, #3ed5bb, #7ee7ce, #2fbea6, #3ed5bb);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: text-sweep 7s ease-in-out infinite;
+}
+
+/* Store button hover glow */
+.btn-store {
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    color 0.25s ease;
+}
+
+.btn-store:hover {
+  border-color: rgba(62, 213, 187, 0.35);
+  box-shadow: 0 0 26px -8px rgba(62, 213, 187, 0.3);
+  color: #f5f7fa;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion                                                      */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .mark-enter,
+  .mark-breathe,
+  .mark-drift,
+  .mark-stream,
+  .glow,
+  .shimmer,
+  .text-sweep {
+    animation: none !important;
+  }
+
+  .text-sweep {
+    color: #3ed5bb;
+    background: none;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .phone-tilt,
+  .btn {
+    transition: none;
+  }
 }
