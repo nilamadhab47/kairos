@@ -8,9 +8,15 @@ builder = "NIXPACKS"
 buildCommand = "pnpm install --frozen-lockfile && pnpm db:generate && pnpm --filter @kairo/server build"
 
 [deploy]
-startCommand = "pnpm --filter @kairo/db migrate:deploy && pnpm --filter @kairo/server start"
-healthcheckPath = "/health"
-healthcheckTimeout = 30
+# Runs in a separate container before start. Needs `prisma` in @kairo/db dependencies
+# (Nixpacks prunes devDependencies). Safe on both api and worker — migrate is idempotent.
+preDeployCommand = ["pnpm --filter @kairo/db migrate:deploy"]
+# KAIRO_ROLE=worker on the worker service; API serves HTTP.
+startCommand = "if [ \"$KAIRO_ROLE\" = \"worker\" ]; then pnpm --filter @kairo/queue start; else pnpm --filter @kairo/server start; fi"
+# Liveness only — /api/health also pings Postgres/Redis and can 503 during boot.
+# Worker uses railway.worker.toml so it does not inherit this probe.
+healthcheckPath = "/api/health/live"
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 

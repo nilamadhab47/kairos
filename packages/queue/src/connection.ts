@@ -13,6 +13,8 @@ export function getRedisConnection(): Redis {
   connection = new IORedis(url, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
+    // Railway private DNS may return IPv6; 0 = dual stack.
+    family: 0,
   });
 
   connection.on('error', (err) => {

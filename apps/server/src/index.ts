@@ -6,8 +6,9 @@ async function main(): Promise<void> {
   const app = await buildServer();
 
   try {
-    await app.listen({ port: env.SERVER_PORT, host: env.HOST });
-    app.log.info(`kairo-api listening on http://${env.HOST}:${env.SERVER_PORT}`);
+    const port = Number(process.env.PORT) || env.SERVER_PORT;
+    await app.listen({ port, host: env.HOST });
+    app.log.info(`kairo-api listening on http://${env.HOST}:${port}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
