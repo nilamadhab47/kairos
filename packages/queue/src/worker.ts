@@ -13,6 +13,7 @@ import { ingestTennisMatches } from './jobs/ingest-tennis.js';
 import { processDeliverPushJob } from './jobs/deliver-push.js';
 import { processSchedulePreEventJob } from './jobs/schedule-pre-event.js';
 import { enrichLogosFromTheSportsDb, type EnrichLogosJobData } from './jobs/enrich-logos.js';
+import { initSportsProviders } from '@kairo/sports';
 import type {
   DeliverPushJobData,
   IngestSportJobData,
@@ -22,6 +23,12 @@ import { enqueueSchedulePreEvent } from './producer.js';
 
 loadDotenv({ path: resolve(process.cwd(), '../../.env') });
 loadDotenv({ path: resolve(process.cwd(), '.env') });
+
+// Register sports providers on the router before any ingest job runs.
+// Without this, `sportsRouter.fetchMatches({ sport: 'f1' | 'cricket' | 'tennis' })`
+// throws "No provider registered for sport: …" because the worker process
+// starts with an empty router.
+initSportsProviders();
 
 const connection = getRedisConnection();
 const workers: Worker[] = [];

@@ -4,3 +4,11 @@
 
 expo-env.d.ts
 # @end expo-cli
+
+# Firebase / FCM — never commit
+google-services.json
+GoogleService-Info.plist
+fcm-service-account.json
+# Firebase Admin SDK service account keys (any name)
+*firebase-adminsdk*.json
+kairos-*.json

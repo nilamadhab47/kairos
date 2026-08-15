@@ -11,6 +11,8 @@
     "dev": "turbo run dev --parallel",
     "dev:server": "turbo run dev --filter=@kairo/server",
     "dev:mobile": "turbo run dev --filter=@kairo/mobile",
+    "mobile:build:preview": "pnpm install --frozen-lockfile && cd apps/mobile && eas build --profile preview --platform android",
+    "mobile:build:production": "pnpm install --frozen-lockfile && cd apps/mobile && eas build --profile production --platform all",
     "dev:web": "turbo run dev --filter=@kairo/web",
     "dev:worker": "turbo run dev --filter=@kairo/queue",
     "build": "turbo run build",

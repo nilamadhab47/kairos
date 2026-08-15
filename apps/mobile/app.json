@@ -23,6 +23,7 @@
     "android": {
       "package": "app.kairo.mobile",
       "usesCleartextTraffic": true,
+      "googleServicesFile": "$GOOGLE_SERVICES_JSON",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0E14"

@@ -181,6 +181,22 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     summary.push({ queue: s.q.name, name: s.name, every: s.every });
   }
 
+  // Kick a one-off ingest per sport on boot so a fresh environment doesn't
+  // wait up to `every` ms for the first repeat tick to fire. jobId includes
+  // the boot timestamp so a redeploy re-fires ingest (BullMQ dedupes on jobId
+  // — reusing the same id across restarts silently drops the second add).
+  const bootId = Date.now();
+  for (const s of specs) {
+    if (!s.name.startsWith('ingest:')) continue;
+    await s.q.add(`${s.name}:boot`, s.data as never, {
+      jobId: `boot:${s.name}:${bootId}`,
+      removeOnComplete: 10,
+      removeOnFail: 10,
+      // Small delay so the worker has time to attach after redeploys.
+      delay: 5_000,
+    });
+  }
+
   return summary;
 }
 

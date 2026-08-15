@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@kairo/db';
+import { enqueueDeliverPush } from '@kairo/queue';
 
 export async function registerDeviceRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -48,6 +49,13 @@ export async function registerDeviceRoutes(app: FastifyInstance): Promise<void> 
       };
       const userId = req.sessionUser!.id;
 
+      // A user is "new to push" if they have no devices yet — send a welcome
+      // push once they finish registering the first one. This proves E2E push
+      // delivery works on their real device.
+      const existingCount = await prisma.userDevice.count({
+        where: { userId, isActive: true },
+      });
+
       const device = await prisma.userDevice.upsert({
         where: {
           userId_expoPushToken: {
@@ -70,6 +78,45 @@ export async function registerDeviceRoutes(app: FastifyInstance): Promise<void> 
           lastSeenAt: new Date(),
         },
       });
+
+      // Send exactly one welcome push per user (first time they register a
+      // push-capable device). Best-effort — never fails the registration.
+      if (existingCount === 0) {
+        try {
+          const alreadyWelcomed = await prisma.notification.findFirst({
+            where: { userId, type: 'welcome' },
+            select: { id: true },
+          });
+          if (!alreadyWelcomed) {
+            const user = await prisma.user.findUnique({
+              where: { id: userId },
+              select: { name: true },
+            });
+            const firstName = user?.name?.split(' ')[0]?.trim();
+            const notification = await prisma.notification.create({
+              data: {
+                userId,
+                type: 'welcome',
+                channel: 'push',
+                title: firstName ? `Welcome to Kairos, ${firstName}` : 'Welcome to Kairos',
+                body: "You're all set. We'll nudge you about 15 minutes before the matches and races you follow — nothing else.",
+                aiGenerated: false,
+                status: 'pending',
+                scheduledFor: new Date(Date.now() + 3_000),
+              },
+            });
+            await enqueueDeliverPush(
+              { notificationId: notification.id },
+              { delay: 3_000, jobId: `push:${notification.id}` },
+            );
+          }
+        } catch (err) {
+          req.log.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            '[devices] welcome push enqueue failed',
+          );
+        }
+      }
 
       return { device };
     },
