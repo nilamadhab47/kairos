@@ -5,10 +5,8 @@
 expo-env.d.ts
 # @end expo-cli
 
-# Firebase / FCM — never commit
-google-services.json
-GoogleService-Info.plist
+# Firebase Admin SDK service account keys — MUST NEVER be committed.
+# (google-services.json / GoogleService-Info.plist are client configs and
+# are safe to commit — they ship inside the APK/IPA regardless.)
 fcm-service-account.json
-# Firebase Admin SDK service account keys (any name)
 *firebase-adminsdk*.json
-kairos-*.json
