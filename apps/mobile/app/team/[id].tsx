@@ -62,11 +62,11 @@ type FollowsResponse = {
 export default function TeamScreen() {
   const theme = useTheme();
   const qc = useQueryClient();
-  const params = useLocalSearchParams<{ id: string; name?: string; sport?: string }>();
+  const params = useLocalSearchParams<{ id: string | string[]; name?: string; sport?: string }>();
   const { openEvent } = useEventDetail();
   const [refreshing, setRefreshing] = useState(false);
 
-  const teamId = params.id;
+  const teamId = Array.isArray(params.id) ? params.id[0] : params.id;
 
   // Hydrate team metadata from the follows list. This is guaranteed to be
   // present because we only ever navigate here from YourTeamsStrip, which

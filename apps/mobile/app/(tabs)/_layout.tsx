@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
-import { EventDetailProvider, PushRegistrar, TabIcon } from '@/components';
+import { PushRegistrar, TabIcon } from '@/components';
 import { useTheme } from '@/design';
 
 function TabLabel({ label, focused, color }: { label: string; focused: boolean; color: string }) {
@@ -22,7 +22,7 @@ export default function TabsLayout() {
   const theme = useTheme();
 
   return (
-    <EventDetailProvider>
+    <>
       <PushRegistrar />
       <Tabs
         screenOptions={{
@@ -96,7 +96,7 @@ export default function TabsLayout() {
           }}
         />
       </Tabs>
-    </EventDetailProvider>
+    </>
   );
 }
 

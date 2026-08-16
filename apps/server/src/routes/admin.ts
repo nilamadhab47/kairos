@@ -268,6 +268,85 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // One-shot backfill for major football competitions the ingest wouldn't
+  // spontaneously create because the current window has no fixtures (UCL
+  // group stage hasn't started, Copa del Rey / Super Copa are seasonal, …).
+  //
+  // Each row is created with the ESPN `providerRef` for its slug, so when
+  // ingest eventually returns fixtures for that league, `upsertCompetition`
+  // finds the seeded row via provider-ref and merges into it — no duplicates.
+  app.post(
+    '/api/admin/backfill/football-competitions',
+    {
+      preHandler: backfillGuard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Seed missing football competitions so the picker lists them out-of-season',
+      },
+    },
+    async () => {
+      const SEEDS = [
+        { name: 'UEFA Champions League', slug: 'uefa.champions', format: 'league', country: 'International' },
+        { name: 'UEFA Europa League', slug: 'uefa.europa', format: 'league', country: 'International' },
+        { name: 'UEFA Conference League', slug: 'uefa.europa.conf', format: 'league', country: 'International' },
+        { name: 'FA Cup', slug: 'eng.fa', format: 'cup', country: 'England' },
+        { name: 'Community Shield', slug: 'eng.charity', format: 'super-cup', country: 'England' },
+        { name: 'Copa del Rey', slug: 'esp.copa_del_rey', format: 'cup', country: 'Spain' },
+        { name: 'Supercopa de España', slug: 'esp.super_cup', format: 'super-cup', country: 'Spain' },
+        { name: 'Coppa Italia', slug: 'ita.coppa_italia', format: 'cup', country: 'Italy' },
+        { name: 'DFB-Pokal', slug: 'ger.dfb_pokal', format: 'cup', country: 'Germany' },
+        { name: 'FIFA World Cup', slug: 'fifa.world', format: 'cup', country: 'International' },
+      ];
+
+      let created = 0;
+      let alreadyPresent = 0;
+      for (const s of SEEDS) {
+        const providerRef = { provider: 'ESPN', externalId: s.slug };
+
+        // Match on provider-ref OR exact name — never duplicate an existing row.
+        const rows = await prisma.competition.findMany({
+          where: { sportId: 'football' },
+          select: { id: true, name: true, providerRefs: true },
+        });
+        const existing = rows.find((c) => {
+          if (c.name === s.name) return true;
+          const refs = Array.isArray(c.providerRefs) ? (c.providerRefs as Array<{ provider: string; externalId: string }>) : [];
+          return refs.some((r) => r.provider === 'ESPN' && r.externalId === s.slug);
+        });
+
+        if (existing) {
+          const refs = Array.isArray(existing.providerRefs)
+            ? (existing.providerRefs as Array<{ provider: string; externalId: string }>)
+            : [];
+          if (!refs.some((r) => r.provider === 'ESPN' && r.externalId === s.slug)) {
+            refs.push(providerRef);
+            await prisma.competition.update({
+              where: { id: existing.id },
+              data: { providerRefs: refs as unknown as object },
+            });
+          }
+          alreadyPresent += 1;
+          continue;
+        }
+
+        await prisma.competition.create({
+          data: {
+            sportId: 'football',
+            name: s.name,
+            displayName: s.name,
+            format: s.format,
+            country: s.country,
+            isActive: true,
+            providerRefs: [providerRef] as unknown as object,
+          },
+        });
+        created += 1;
+      }
+
+      return { ok: true, created, alreadyPresent, total: SEEDS.length };
+    },
+  );
+
   // One-shot backfill for cricket teams (national + IPL franchises). The free
   // Cricbuzz tier only ingests today's live matches, so onboarding pickers see
   // an empty catalog. This seeds the well-known teams and links them to

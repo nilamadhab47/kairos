@@ -10,6 +10,14 @@ import type { SubRow } from '@kairo/core';
 import { competitionFamilyIds } from './competitions.js';
 
 /**
+ * Sports whose matches don't use `homeTeamId` / `awayTeamId` — the row is a
+ * session, not a head-to-head. A team follow (e.g. Ferrari) really means
+ * "I want the championship" here, so we promote it to a competition follow
+ * during query building.
+ */
+const INDIVIDUAL_SPORTS = new Set(['f1']);
+
+/**
  * Build a Prisma `where` for the Match table that reflects the user's real
  * follow intent, one sport at a time.
  *
@@ -61,6 +69,20 @@ export async function personalizedMatchWhere(
       bucket.teams.add(s.entityId);
     }
     bySport.set(s.category, bucket);
+  }
+
+  // Individual sports: promote team follows to the linked competition and
+  // drop the team from the bucket, so downstream logic doesn't try to
+  // narrow by `homeTeamId` / `awayTeamId` (both are null on F1 sessions).
+  for (const [sportId, bucket] of bySport) {
+    if (!INDIVIDUAL_SPORTS.has(sportId)) continue;
+    if (bucket.teams.size === 0) continue;
+    const links = await prisma.teamCompetition.findMany({
+      where: { teamId: { in: [...bucket.teams] } },
+      select: { competitionId: true },
+    });
+    for (const l of links) bucket.comps.add(l.competitionId);
+    bucket.teams.clear();
   }
 
   // Expand every followed competition to its season/provider family.
