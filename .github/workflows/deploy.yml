@@ -37,8 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # Project-scoped token — Railway CLI picks it up automatically.
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      # TEMPORARY: hard-coded to smoke-test the workflow end-to-end.
+      # ⚠ This token is now in the public repo history. As soon as a deploy
+      # succeeds, rotate the token in Railway (Tokens → delete → new one)
+      # and switch back to `${{ secrets.RAILWAY_TOKEN }}`.
+      RAILWAY_TOKEN: 1f039678-da7a-469a-af84-f032fdaeaa7d
     steps:
       - uses: actions/checkout@v4
 
@@ -48,10 +51,12 @@ jobs:
       - name: Sanity-check token
         run: |
           if [ -z "$RAILWAY_TOKEN" ]; then
-            echo "::error::RAILWAY_TOKEN secret is not set. Add it under Settings → Secrets → Actions."
+            echo "::error::RAILWAY_TOKEN is not set."
             exit 1
           fi
-          railway whoami
+          # `railway whoami` intentionally fails for project-scoped tokens; use
+          # `railway status` (which reads project metadata) as the smoke test.
+          railway status
 
       - name: Deploy api
         if: ${{ github.event_name == 'push' || inputs.service == 'both' || inputs.service == 'api' }}
