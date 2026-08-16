@@ -252,6 +252,168 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // One-shot backfill for cricket teams (national + IPL franchises). The free
+  // Cricbuzz tier only ingests today's live matches, so onboarding pickers see
+  // an empty catalog. This seeds the well-known teams and links them to
+  // dedicated competitions so the mobile picker (filters by competitionId)
+  // shows a proper roster. Logos are filled by TheSportsDB via searchteams.
+  app.post(
+    '/api/admin/backfill/cricket-teams',
+    {
+      preHandler: guard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Seed international cricket nations + IPL franchises',
+      },
+    },
+    async () => {
+      type Seed = { name: string; shortName: string; country?: string };
+
+      const NATIONS: Seed[] = [
+        { name: 'India', shortName: 'IND', country: 'India' },
+        { name: 'Australia', shortName: 'AUS', country: 'Australia' },
+        { name: 'England', shortName: 'ENG', country: 'England' },
+        { name: 'Pakistan', shortName: 'PAK', country: 'Pakistan' },
+        { name: 'New Zealand', shortName: 'NZ', country: 'New Zealand' },
+        { name: 'South Africa', shortName: 'SA', country: 'South Africa' },
+        { name: 'Sri Lanka', shortName: 'SL', country: 'Sri Lanka' },
+        { name: 'Bangladesh', shortName: 'BAN', country: 'Bangladesh' },
+        { name: 'West Indies', shortName: 'WI', country: 'West Indies' },
+        { name: 'Afghanistan', shortName: 'AFG', country: 'Afghanistan' },
+        { name: 'Zimbabwe', shortName: 'ZIM', country: 'Zimbabwe' },
+        { name: 'Ireland', shortName: 'IRE', country: 'Ireland' },
+      ];
+
+      const IPL: Seed[] = [
+        { name: 'Mumbai Indians', shortName: 'MI', country: 'India' },
+        { name: 'Chennai Super Kings', shortName: 'CSK', country: 'India' },
+        { name: 'Royal Challengers Bengaluru', shortName: 'RCB', country: 'India' },
+        { name: 'Kolkata Knight Riders', shortName: 'KKR', country: 'India' },
+        { name: 'Delhi Capitals', shortName: 'DC', country: 'India' },
+        { name: 'Punjab Kings', shortName: 'PBKS', country: 'India' },
+        { name: 'Rajasthan Royals', shortName: 'RR', country: 'India' },
+        { name: 'Sunrisers Hyderabad', shortName: 'SRH', country: 'India' },
+        { name: 'Gujarat Titans', shortName: 'GT', country: 'India' },
+        { name: 'Lucknow Super Giants', shortName: 'LSG', country: 'India' },
+      ];
+
+      async function ensureComp(name: string, format: string) {
+        const existing = await prisma.competition.findFirst({
+          where: { sportId: 'cricket', name },
+        });
+        if (existing) return existing;
+        return prisma.competition.create({
+          data: {
+            sportId: 'cricket',
+            name,
+            displayName: name,
+            format,
+            isActive: true,
+            providerRefs: [] as unknown as object,
+          },
+        });
+      }
+
+      async function upsertTeam(
+        seed: Seed,
+        type: 'national' | 'franchise',
+        competitionId: string,
+      ): Promise<'created' | 'updated'> {
+        const existing = await prisma.team.findFirst({
+          where: { sportId: 'cricket', name: seed.name },
+        });
+        let teamId: string;
+        let outcome: 'created' | 'updated';
+        if (existing) {
+          const row = await prisma.team.update({
+            where: { id: existing.id },
+            data: {
+              type,
+              shortName: existing.shortName ?? seed.shortName,
+              country: existing.country ?? seed.country,
+            },
+          });
+          teamId = row.id;
+          outcome = 'updated';
+        } else {
+          const row = await prisma.team.create({
+            data: {
+              sportId: 'cricket',
+              name: seed.name,
+              shortName: seed.shortName,
+              type,
+              country: seed.country,
+              providerRefs: [] as unknown as object,
+            },
+          });
+          teamId = row.id;
+          outcome = 'created';
+        }
+        await prisma.teamCompetition.upsert({
+          where: { teamId_competitionId: { teamId, competitionId } },
+          update: {},
+          create: { teamId, competitionId },
+        });
+        return outcome;
+      }
+
+      const intlComp = await ensureComp('International', 'international');
+      const iplComp = await ensureComp('Indian Premier League', 'franchise');
+
+      let created = 0;
+      let updated = 0;
+      for (const n of NATIONS) {
+        const r = await upsertTeam(n, 'national', intlComp.id);
+        if (r === 'created') created += 1;
+        else updated += 1;
+      }
+      for (const t of IPL) {
+        const r = await upsertTeam(t, 'franchise', iplComp.id);
+        if (r === 'created') created += 1;
+        else updated += 1;
+      }
+
+      // Best-effort logo enrichment via TheSportsDB — never blocks the seed.
+      let enriched = 0;
+      const provider = new TheSportsDBProvider();
+      const allSeeds: Array<Seed & { comp: string; type: 'national' | 'franchise' }> = [
+        ...NATIONS.map((n) => ({ ...n, comp: intlComp.id, type: 'national' as const })),
+        ...IPL.map((t) => ({ ...t, comp: iplComp.id, type: 'franchise' as const })),
+      ];
+      for (const seed of allSeeds) {
+        try {
+          const matches = await provider.fetchTeams({ query: seed.name, sport: 'cricket' });
+          const hit = matches.find((m) => m.name.toLowerCase() === seed.name.toLowerCase()) ??
+            matches[0];
+          if (!hit?.logoUrl) continue;
+          const team = await prisma.team.findFirst({
+            where: { sportId: 'cricket', name: seed.name },
+            select: { id: true, logoUrl: true },
+          });
+          if (!team) continue;
+          if (!team.logoUrl) {
+            await prisma.team.update({
+              where: { id: team.id },
+              data: { logoUrl: hit.logoUrl },
+            });
+            enriched += 1;
+          }
+        } catch {
+          // Rate-limits and 404s are non-fatal here.
+        }
+      }
+
+      return {
+        ok: true,
+        competitions: { international: intlComp.id, ipl: iplComp.id },
+        created,
+        updated,
+        logosEnriched: enriched,
+        totalSeeded: NATIONS.length + IPL.length,
+      };
+    },
+  );
+
   app.post(
     '/api/admin/schedule-pre-event',
     {
