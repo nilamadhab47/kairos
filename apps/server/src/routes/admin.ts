@@ -29,6 +29,22 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       ? [app.authenticate]
       : [];
 
+  // Ops-only bypass for one-off backfill routes: a shared secret sent as
+  // `X-Admin-Secret`. Enabled only when `ADMIN_BACKFILL_SECRET` is set on
+  // the service — otherwise falls through to the normal auth guard, so
+  // there's no way to accidentally leave it open.
+  const backfillGuard = [
+    async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
+      const configured = process.env.ADMIN_BACKFILL_SECRET?.trim();
+      if (configured) {
+        const provided = (req.headers['x-admin-secret'] as string | undefined)?.trim();
+        if (provided && provided === configured) return;
+      }
+      if (process.env.NODE_ENV !== 'production') return;
+      await app.authenticate(req, reply);
+    },
+  ];
+
   app.post(
     '/api/admin/ingest',
     {
@@ -123,7 +139,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/api/admin/backfill/f1-constructors',
     {
-      preHandler: guard,
+      preHandler: backfillGuard,
       schema: {
         tags: ['admin'],
         summary: 'Populate F1 Team rows (constructors) and link to Formula 1 competition',
@@ -260,7 +276,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/api/admin/backfill/cricket-teams',
     {
-      preHandler: guard,
+      preHandler: backfillGuard,
       schema: {
         tags: ['admin'],
         summary: 'Seed international cricket nations + IPL franchises',
