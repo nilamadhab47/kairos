@@ -16,7 +16,7 @@ import {
   enqueueEnrichLogos,
   getEnrichLogosJob,
 } from '@kairo/queue';
-import { sportsRouter } from '@kairo/sports';
+import { sportsRouter, TheSportsDBProvider } from '@kairo/sports';
 
 type Sport = 'f1' | 'football' | 'cricket' | 'tennis';
 const SUPPORTED: Sport[] = ['f1', 'football', 'cricket', 'tennis'];
@@ -113,6 +113,142 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
 
       return { enqueued, sync };
+    },
+  );
+
+  // One-shot backfill for F1 constructors (Ferrari, Red Bull, McLaren, …).
+  // OpenF1 does not expose a `year`-only constructor endpoint, so we source
+  // the grid from TheSportsDB and link each row to the F1 competition so the
+  // mobile teams picker (filters by competitionId) can find them.
+  app.post(
+    '/api/admin/backfill/f1-constructors',
+    {
+      preHandler: guard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Populate F1 Team rows (constructors) and link to Formula 1 competition',
+      },
+    },
+    async () => {
+      const SHORT_NAME_ALIASES: Record<string, string> = {
+        'Oracle Red Bull Racing': 'Red Bull',
+        'Scuderia Ferrari HP': 'Ferrari',
+        'McLaren Formula 1 Team': 'McLaren',
+        'Mercedes-AMG PETRONAS Formula One Team': 'Mercedes',
+        'Aston Martin Aramco Formula One Team': 'Aston Martin',
+        'BWT Alpine Formula One Team': 'Alpine',
+        'MoneyGram Haas F1 Team': 'Haas',
+        'Visa Cash App Racing Bulls Formula One Team': 'Racing Bulls',
+        'Audi Revolut F1 Team': 'Audi',
+        'Cadillac Formula 1 Team': 'Cadillac',
+        'Kick Sauber F1 Team': 'Sauber',
+        'Stake F1 Team Kick Sauber': 'Sauber',
+        'Williams Racing': 'Williams',
+      };
+
+      const provider = new TheSportsDBProvider();
+      const constructors = await provider.fetchF1Constructors();
+      if (constructors.length === 0) {
+        return { ok: false, error: 'thesportsdb_returned_empty' };
+      }
+
+      // Ensure the F1 competition exists (created by seed:sports on boot).
+      const f1Competition = await prisma.competition.findFirst({
+        where: { sportId: 'f1' },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      let created = 0;
+      let updated = 0;
+      let linked = 0;
+
+      for (const c of constructors) {
+        const shortName = SHORT_NAME_ALIASES[c.name] ?? c.shortName ?? null;
+        const providerRef = { provider: 'thesportsdb', externalId: c.externalId };
+
+        const existingByRef = await prisma.team.findFirst({
+          where: {
+            sportId: 'f1',
+            providerRefs: { array_contains: [providerRef] as unknown as object },
+          },
+        });
+        const existing =
+          existingByRef ??
+          (await prisma.team.findFirst({ where: { sportId: 'f1', name: c.name } }));
+
+        let teamId: string;
+        if (existing) {
+          const row = await prisma.team.update({
+            where: { id: existing.id },
+            data: {
+              type: 'constructor',
+              shortName: existing.shortName ?? shortName,
+              logoUrl: existing.logoUrl ?? c.badgeUrl ?? c.logoUrl,
+              country: existing.country ?? c.country,
+              providerRefs: [providerRef] as unknown as object,
+            },
+          });
+          teamId = row.id;
+          updated += 1;
+        } else {
+          const row = await prisma.team.create({
+            data: {
+              sportId: 'f1',
+              name: c.name,
+              shortName,
+              type: 'constructor',
+              logoUrl: c.badgeUrl ?? c.logoUrl,
+              country: c.country,
+              providerRefs: [providerRef] as unknown as object,
+            },
+          });
+          teamId = row.id;
+          created += 1;
+        }
+
+        if (f1Competition) {
+          await prisma.teamCompetition.upsert({
+            where: {
+              teamId_competitionId: { teamId, competitionId: f1Competition.id },
+            },
+            update: {},
+            create: { teamId, competitionId: f1Competition.id },
+          });
+          linked += 1;
+        }
+
+        if (c.badgeUrl) {
+          await prisma.asset
+            .upsert({
+              where: {
+                entityType_entityId_assetType_provider: {
+                  entityType: 'team',
+                  entityId: teamId,
+                  assetType: 'logo',
+                  provider: 'thesportsdb',
+                },
+              },
+              update: { url: c.badgeUrl },
+              create: {
+                entityType: 'team',
+                entityId: teamId,
+                assetType: 'logo',
+                provider: 'thesportsdb',
+                url: c.badgeUrl,
+              },
+            })
+            .catch(() => undefined);
+        }
+      }
+
+      return {
+        ok: true,
+        constructors: constructors.length,
+        created,
+        updated,
+        linked,
+        competitionId: f1Competition?.id ?? null,
+      };
     },
   );
 
