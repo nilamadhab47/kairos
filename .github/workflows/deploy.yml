@@ -1,0 +1,62 @@
+name: Deploy to Railway
+
+# Deploys the `api` and `worker` services to Railway on every push to main.
+# Both services share the same monorepo build; each `railway up` invocation
+# picks up its own config-as-code (railway.toml for api, railway.worker.toml
+# for worker — set in the Railway service Settings → Config-as-code).
+#
+# Prerequisites (one-time):
+#   1. Create a project-scoped token: Railway → Project → Tokens → New
+#      Token → scope "Project" (NOT workspace). Copy the value.
+#   2. Add it as `RAILWAY_TOKEN` under GitHub → repo → Settings → Secrets
+#      and variables → Actions → New repository secret.
+#
+# You can also run this workflow on demand from the Actions tab
+# (workflow_dispatch), or scope it to a single service via the input.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Which service to deploy
+        type: choice
+        default: both
+        options:
+          - both
+          - api
+          - worker
+
+concurrency:
+  group: railway-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Project-scoped token — Railway CLI picks it up automatically.
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Sanity-check token
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::error::RAILWAY_TOKEN secret is not set. Add it under Settings → Secrets → Actions."
+            exit 1
+          fi
+          railway whoami
+
+      - name: Deploy api
+        if: ${{ github.event_name == 'push' || inputs.service == 'both' || inputs.service == 'api' }}
+        run: railway up --service api --ci
+
+      - name: Deploy worker
+        if: ${{ github.event_name == 'push' || inputs.service == 'both' || inputs.service == 'worker' }}
+        run: railway up --service worker --ci
