@@ -46,7 +46,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Railway CLI
-        run: curl -fsSL https://railway.com/install.sh | sh
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+          # The installer only edits ~/.bash_profile, which the next
+          # non-login step won't source. Prepend the bin dir to PATH for
+          # every subsequent step in this job.
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
 
       - name: Sanity-check token
         run: |
