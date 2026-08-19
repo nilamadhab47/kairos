@@ -156,7 +156,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
 
       const job = await enqueueDeliverPush(
         { notificationId: notification.id },
-        { jobId: `push:${notification.id}` },
+        { jobId: `push_${notification.id}` },
       );
 
       return { notificationId: notification.id, job };

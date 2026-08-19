@@ -113,7 +113,7 @@ export async function registerDeviceRoutes(app: FastifyInstance): Promise<void> 
             });
             await enqueueDeliverPush(
               { notificationId: notification.id },
-              { delay: 3_000, jobId: `push:${notification.id}` },
+              { delay: 3_000, jobId: `push_${notification.id}` },
             );
           }
         } catch (err) {

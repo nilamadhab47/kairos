@@ -126,7 +126,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
 
       const job = await enqueueDeliverPush(
         { notificationId: notification.id },
-        { jobId: `push:${notification.id}` },
+        { jobId: `push_${notification.id}` },
       );
 
       return {
@@ -829,7 +829,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         { notificationId: notification.id },
         {
           delay: Math.max(0, delaySeconds * 1000),
-          jobId: `push:${notification.id}`,
+          jobId: `push_${notification.id}`,
         },
       );
 

@@ -238,7 +238,7 @@ export async function processSchedulePreEventJob(
       const delay = Math.max(0, scheduledFor.getTime() - Date.now());
       await enqueueDeliverPush(
         { notificationId: notification.id },
-        { delay, jobId: `push:${notification.id}` },
+        { delay, jobId: `push_${notification.id}` },
       );
       created += 1;
       used += 1;
