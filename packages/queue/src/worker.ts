@@ -11,6 +11,7 @@ import { ingestFootballFixtures } from './jobs/ingest-football.js';
 import { ingestCricketMatches } from './jobs/ingest-cricket.js';
 import { ingestTennisMatches } from './jobs/ingest-tennis.js';
 import { processDeliverPushJob } from './jobs/deliver-push.js';
+import { processCheckPushReceiptsJob } from './jobs/check-push-receipts.js';
 import { processSchedulePreEventJob } from './jobs/schedule-pre-event.js';
 import { enrichLogosFromTheSportsDb, type EnrichLogosJobData } from './jobs/enrich-logos.js';
 import { initSportsProviders } from '@kairo/sports';
@@ -103,6 +104,15 @@ workers.push(
     QUEUE_NAMES.preEvent,
     async (job: Job<SchedulePreEventJobData>) =>
       processSchedulePreEventJob(job.data),
+    { connection, concurrency: 1 },
+  ),
+);
+
+// Poll Expo receipts every 5m for any notification whose ticket is >=15m old.
+workers.push(
+  new Worker(
+    QUEUE_NAMES.pushReceipts,
+    async () => processCheckPushReceiptsJob(),
     { connection, concurrency: 1 },
   ),
 );

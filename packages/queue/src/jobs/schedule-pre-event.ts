@@ -1,17 +1,41 @@
 import { eventMatchesSubs } from '@kairo/core';
 import { prisma } from '@kairo/db';
 import { enqueueDeliverPush } from '../producer.js';
+import { composeCopy } from '../lib/copy.js';
 
 export type SchedulePreEventJobData = {
   /** Lookahead window in minutes for creating pending notifications */
   windowMins?: number;
 };
 
-function templateCopy(eventTitle: string, mins: number): { title: string; body: string } {
-  return {
-    title: `Starting in ${mins}m`,
-    body: eventTitle,
-  };
+/** Try to recover home/away from the mirrored event metadata. */
+function extractTeams(event: {
+  metadata: unknown;
+  title: string;
+}): { home: string | null; away: string | null } {
+  const m = event.metadata as
+    | { homeTeam?: { name?: string } | null; awayTeam?: { name?: string } | null }
+    | null
+    | undefined;
+  const home = m?.homeTeam?.name ?? null;
+  const away = m?.awayTeam?.name ?? null;
+  if (home && away) return { home, away };
+  // Fallback: parse "A vs B" out of the event title.
+  const parts = event.title.split(/\s+vs\.?\s+/i);
+  if (parts.length === 2) return { home: parts[0]!.trim(), away: parts[1]!.trim() };
+  return { home: null, away: null };
+}
+
+function extractRound(event: { metadata: unknown; subtitle: string | null }): string | null {
+  const m = event.metadata as { round?: string | null } | null | undefined;
+  return m?.round?.trim() || null;
+}
+
+function extractCompetition(event: { subtitle: string | null }): string | null {
+  const sub = event.subtitle?.trim();
+  if (!sub) return null;
+  // Subtitles are "<competition> · <round>" — strip the round when possible.
+  return sub.split(' · ')[0]?.trim() || sub;
 }
 
 function zonedMinutes(at: Date, timeZone: string): number {
@@ -182,7 +206,21 @@ export async function processSchedulePreEventJob(
       });
       if (existing) continue;
 
-      const copy = templateCopy(event.title, preMins);
+      const { home, away } = extractTeams(event);
+      const competition = extractCompetition(event);
+      const round = extractRound(event);
+      const copy = await composeCopy({
+        kind: 'pre_event',
+        seed: `${user.id}:${event.id}`,
+        sport: event.category,
+        competition,
+        homeTeam: home,
+        awayTeam: away,
+        round,
+        minsUntil: preMins,
+        userId: user.id,
+      });
+
       const notification = await prisma.notification.create({
         data: {
           userId: user.id,
@@ -191,7 +229,7 @@ export async function processSchedulePreEventJob(
           channel: 'push',
           title: copy.title,
           body: copy.body,
-          aiGenerated: false,
+          aiGenerated: copy.aiGenerated,
           status: 'pending',
           scheduledFor,
         },

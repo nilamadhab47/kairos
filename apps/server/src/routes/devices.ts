@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@kairo/db';
-import { enqueueDeliverPush } from '@kairo/queue';
+import { composeCopy, enqueueDeliverPush } from '@kairo/queue';
 
 export async function registerDeviceRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -92,15 +92,21 @@ export async function registerDeviceRoutes(app: FastifyInstance): Promise<void> 
               where: { id: userId },
               select: { name: true },
             });
-            const firstName = user?.name?.split(' ')[0]?.trim();
+            const firstName = user?.name?.split(' ')[0]?.trim() ?? null;
+            const copy = await composeCopy({
+              kind: 'welcome',
+              seed: `welcome:${userId}`,
+              firstName,
+              userId,
+            });
             const notification = await prisma.notification.create({
               data: {
                 userId,
                 type: 'welcome',
                 channel: 'push',
-                title: firstName ? `Welcome to Kairos, ${firstName}` : 'Welcome to Kairos',
-                body: "You're all set. We'll nudge you about 15 minutes before the matches and races you follow — nothing else.",
-                aiGenerated: false,
+                title: copy.title,
+                body: copy.body,
+                aiGenerated: copy.aiGenerated,
                 status: 'pending',
                 scheduledFor: new Date(Date.now() + 3_000),
               },

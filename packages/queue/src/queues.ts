@@ -5,6 +5,7 @@ export const QUEUE_NAMES = {
   morningBrief: 'kairo-morning-brief',
   preEvent: 'kairo-pre-event',
   liveNow: 'kairo-deliver-push',
+  pushReceipts: 'kairo-push-receipts',
   ingestSports: 'kairo-ingest-sports',
   enrichLogos: 'kairo-enrich-logos',
 } as const;

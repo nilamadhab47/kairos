@@ -84,6 +84,21 @@ export async function enqueueDeliverPush(
   return { id: job.id ?? 'unknown', queue: queue.name };
 }
 
+export type CheckPushReceiptsJobData = Record<string, never>;
+
+export async function enqueueCheckPushReceipts(
+  data: CheckPushReceiptsJobData = {} as CheckPushReceiptsJobData,
+  opts?: JobsOptions,
+): Promise<{ id: string; queue: string }> {
+  const queue = getQueue<CheckPushReceiptsJobData>(QUEUE_NAMES.pushReceipts);
+  const job = await queue.add('check-push-receipts', data, {
+    removeOnComplete: 50,
+    removeOnFail: 50,
+    ...opts,
+  });
+  return { id: job.id ?? 'unknown', queue: queue.name };
+}
+
 export type SchedulePreEventJobData = {
   windowMins?: number;
 };
@@ -153,6 +168,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
   const summary: Array<{ queue: string; name: string; every: number }> = [];
   const ingestQueue = getQueue<IngestSportJobData>(QUEUE_NAMES.ingestSports);
   const preEventQueue = getQueue<SchedulePreEventJobData>(QUEUE_NAMES.preEvent);
+  const receiptsQueue = getQueue<CheckPushReceiptsJobData>(QUEUE_NAMES.pushReceipts);
 
   // Cadences (ms):
   const CRON = {
@@ -161,6 +177,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     cricket: 30 * 60_000,       // 30m — live-heavy
     tennis: 12 * 60 * 60_000,   // 12h
     preEvent: 30 * 60_000,      // 30m
+    pushReceipts: 5 * 60_000,   // 5m — Expo receipts are only meaningful >15m after send
   };
 
   const specs: Array<{ q: Queue; name: string; data: unknown; every: number }> = [
@@ -169,6 +186,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     { q: ingestQueue as unknown as Queue, name: 'ingest:cricket', data: { sport: 'cricket' }, every: CRON.cricket },
     { q: ingestQueue as unknown as Queue, name: 'ingest:tennis', data: { sport: 'tennis' }, every: CRON.tennis },
     { q: preEventQueue as unknown as Queue, name: 'schedule-pre-event', data: {}, every: CRON.preEvent },
+    { q: receiptsQueue as unknown as Queue, name: 'check-push-receipts', data: {}, every: CRON.pushReceipts },
   ];
 
   for (const s of specs) {
@@ -207,6 +225,7 @@ export async function unregisterRepeatableJobs(): Promise<void> {
   const queues = [
     getQueue(QUEUE_NAMES.ingestSports),
     getQueue(QUEUE_NAMES.preEvent),
+    getQueue(QUEUE_NAMES.pushReceipts),
   ];
   for (const q of queues) {
     const repeats = await q.getRepeatableJobs();

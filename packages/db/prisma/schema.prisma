@@ -224,6 +224,13 @@ model Notification {
   title        String    @db.VarChar(255)
   body         String?   @db.Text
   aiGenerated  Boolean   @default(false) @map("ai_generated")
+  // Lifecycle: pending → sent → (delivered | failed | dropped)
+  //   pending   — row created, not yet handed to Expo
+  //   sent      — Expo `send` returned an OK ticket for at least one device
+  //   delivered — `getReceipts` returned `ok` for the ticket (device got it)
+  //   failed    — every ticket errored, or receipt returned `error`
+  //   dropped   — token was rejected (`DeviceNotRegistered`, `InvalidCredentials`,
+  //               `MismatchSenderId`) and we deactivated the device
   status       String    @default("pending") @db.VarChar(20)
   scheduledFor DateTime  @map("scheduled_for") @db.Timestamptz(6)
   sentAt       DateTime? @map("sent_at") @db.Timestamptz(6)
@@ -231,12 +238,26 @@ model Notification {
   errorMsg     String?   @map("error_msg") @db.Text
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  // Delivery tracking — populated by processDeliverPushJob (send)
+  // and processCheckPushReceiptsJob (getReceipts). See jobs/deliver-push.ts.
+  ticketId         String?   @map("ticket_id") @db.VarChar(64)
+  ticketStatus     String?   @map("ticket_status") @db.VarChar(20)
+  ticketError      String?   @map("ticket_error") @db.VarChar(64)
+  receiptStatus    String?   @map("receipt_status") @db.VarChar(20)
+  receiptError     String?   @map("receipt_error") @db.VarChar(64)
+  receiptCheckedAt DateTime? @map("receipt_checked_at") @db.Timestamptz(6)
+  attemptCount     Int       @default(0) @map("attempt_count")
+  // Per-device breakdown for multi-device users:
+  //   [{ deviceId, ticketId, ticketStatus, ticketError, receiptStatus, receiptError }]
+  deliveryAttempts Json?     @map("delivery_attempts")
+
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt(sort: Desc)], name: "idx_notif_user")
   @@index([scheduledFor], name: "idx_notif_scheduled")
   @@index([status], name: "idx_notif_status")
+  @@index([ticketId], name: "idx_notif_ticket")
   @@map("notifications")
 }
 

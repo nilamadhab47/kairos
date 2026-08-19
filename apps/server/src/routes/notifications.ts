@@ -51,10 +51,21 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
           title: n.title,
           body: n.body,
           status: n.status,
+          aiGenerated: n.aiGenerated,
           scheduledFor: n.scheduledFor.toISOString(),
           sentAt: n.sentAt?.toISOString() ?? null,
           readAt: n.readAt?.toISOString() ?? null,
           createdAt: n.createdAt.toISOString(),
+          // Delivery tracking (see packages/queue/src/jobs/deliver-push.ts).
+          delivery: {
+            ticketStatus: n.ticketStatus,
+            ticketError: n.ticketError,
+            receiptStatus: n.receiptStatus,
+            receiptError: n.receiptError,
+            receiptCheckedAt: n.receiptCheckedAt?.toISOString() ?? null,
+            attemptCount: n.attemptCount,
+            errorMsg: n.errorMsg,
+          },
           eventId: n.eventId,
           event: n.event
             ? {

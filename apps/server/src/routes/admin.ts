@@ -45,6 +45,64 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     },
   ];
 
+  // Fast operational rollup for push delivery. Non-destructive, and cheap
+  // enough to hit from the Railway logs UI whenever a delivery looks off.
+  app.get(
+    '/api/admin/push/health',
+    {
+      preHandler: backfillGuard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Push notification delivery health (last 24h + last 100 rows)',
+      },
+    },
+    async () => {
+      const since = new Date(Date.now() - 24 * 60 * 60_000);
+      const rows = await prisma.notification.groupBy({
+        by: ['status'],
+        where: { channel: 'push', createdAt: { gte: since } },
+        _count: true,
+      });
+      const errorBreakdown = await prisma.notification.groupBy({
+        by: ['ticketError'],
+        where: { channel: 'push', createdAt: { gte: since }, ticketError: { not: null } },
+        _count: true,
+      });
+      const receiptBreakdown = await prisma.notification.groupBy({
+        by: ['receiptError'],
+        where: { channel: 'push', createdAt: { gte: since }, receiptError: { not: null } },
+        _count: true,
+      });
+      const recent = await prisma.notification.findMany({
+        where: { channel: 'push' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          title: true,
+          aiGenerated: true,
+          scheduledFor: true,
+          sentAt: true,
+          receiptCheckedAt: true,
+          attemptCount: true,
+          ticketError: true,
+          receiptError: true,
+          errorMsg: true,
+        },
+      });
+      const totals = Object.fromEntries(rows.map((r) => [r.status, r._count]));
+      return {
+        window: '24h',
+        totals,
+        ticketErrors: errorBreakdown.map((r) => ({ error: r.ticketError, count: r._count })),
+        receiptErrors: receiptBreakdown.map((r) => ({ error: r.receiptError, count: r._count })),
+        recent,
+      };
+    },
+  );
+
   app.post(
     '/api/admin/ingest',
     {

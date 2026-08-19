@@ -15,6 +15,8 @@ export type { IngestCricketResult, IngestCricketSeriesResult } from './jobs/inge
 export { ingestTennisMatches } from './jobs/ingest-tennis.js';
 export type { IngestTennisResult } from './jobs/ingest-tennis.js';
 export { processDeliverPushJob } from './jobs/deliver-push.js';
+export { processCheckPushReceiptsJob } from './jobs/check-push-receipts.js';
 export { processSchedulePreEventJob } from './jobs/schedule-pre-event.js';
+export { composeCopy, type CopyContext, type CopyKind } from './lib/copy.js';
 export { enrichLogosFromTheSportsDb } from './jobs/enrich-logos.js';
 export type { EnrichLogosJobData, EnrichLogosResult } from './jobs/enrich-logos.js';
