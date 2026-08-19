@@ -15,6 +15,10 @@ import {
   enrichLogosFromTheSportsDb,
   enqueueEnrichLogos,
   getEnrichLogosJob,
+  generateStoryline,
+  scoreEventForUser,
+  stagesForScore,
+  type StoryStage,
 } from '@kairo/queue';
 import { sportsRouter, TheSportsDBProvider } from '@kairo/sports';
 
@@ -44,6 +48,140 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await app.authenticate(req, reply);
     },
   ];
+
+  // Preview the storyteller for a given (user, event). No push is sent —
+  // this only calls Anthropic and returns the candidates so you can eyeball
+  // copy quality before the real scheduler fires.
+  //
+  // Example:
+  //   curl -X POST "$API/api/admin/push/storyline/preview" \
+  //     -H "X-Admin-Secret: $ADMIN_BACKFILL_SECRET" \
+  //     -H "Content-Type: application/json" \
+  //     -d '{"userEmail":"you@example.com","eventId":"<event-id>"}'
+  app.post(
+    '/api/admin/push/storyline/preview',
+    {
+      preHandler: backfillGuard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Preview the multi-stage storyline for a given (user, event)',
+        body: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            userEmail: { type: 'string' },
+            eventId: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const b = (req.body ?? {}) as {
+        userId?: string;
+        userEmail?: string;
+        eventId?: string;
+      };
+      if (!b.eventId) {
+        return reply.code(400).send({ error: 'missing_event_id' });
+      }
+      const user = b.userId
+        ? await prisma.user.findUnique({
+            where: { id: b.userId },
+            include: { subscriptions: { where: { isActive: true } } },
+          })
+        : b.userEmail
+          ? await prisma.user.findUnique({
+              where: { email: b.userEmail },
+              include: { subscriptions: { where: { isActive: true } } },
+            })
+          : null;
+      if (!user) return reply.code(404).send({ error: 'user_not_found' });
+
+      const event = await prisma.event.findUnique({ where: { id: b.eventId } });
+      if (!event) return reply.code(404).send({ error: 'event_not_found' });
+
+      const { score, reasons } = scoreEventForUser(event, user.subscriptions);
+      const stages = stagesForScore(score);
+      if (stages.length === 0) {
+        return {
+          eventId: event.id,
+          score,
+          reasons,
+          stages: [],
+          note: 'importance below any stage threshold — no push would be scheduled',
+        };
+      }
+
+      const followedTeamIds = user.subscriptions
+        .filter((s) => s.entityType === 'team')
+        .map((s) => s.entityId);
+      const followedCompIds = user.subscriptions
+        .filter((s) => s.entityType === 'competition')
+        .map((s) => s.entityId);
+      const [teamRows, compRows] = await Promise.all([
+        followedTeamIds.length > 0
+          ? prisma.team.findMany({ where: { id: { in: followedTeamIds } }, select: { name: true } })
+          : Promise.resolve([]),
+        followedCompIds.length > 0
+          ? prisma.competition.findMany({
+              where: { id: { in: followedCompIds } },
+              select: { name: true },
+            })
+          : Promise.resolve([]),
+      ]);
+
+      const m = (event.metadata ?? {}) as {
+        homeTeam?: { name?: string } | null;
+        awayTeam?: { name?: string } | null;
+        round?: string | null;
+        venue?: string | null;
+      };
+      const home = m.homeTeam?.name ?? null;
+      const away = m.awayTeam?.name ?? null;
+      const competition =
+        event.subtitle?.split(' · ')[0]?.trim() ?? null;
+
+      const nowMs = Date.now();
+      const minsUntilByStage: Record<StoryStage, number> = {
+        morning_teaser: Math.round((event.startsAt.getTime() - nowMs) / 60_000),
+        midday_hype: 300,
+        pre_event: 15,
+      };
+
+      const storyline = await generateStoryline(
+        {
+          event: {
+            id: event.id,
+            sport: event.category,
+            sportLabel: event.category,
+            competition,
+            homeTeam: home,
+            awayTeam: away,
+            round: m.round ?? null,
+            venue: m.venue ?? null,
+            startsAt: event.startsAt,
+            isDerby: reasons.includes('derby'),
+            isFinal: reasons.includes('final_or_semi'),
+            prestige: reasons.includes('prestige_competition'),
+          },
+          user: {
+            id: user.id,
+            firstName: user.name?.split(' ')[0]?.trim() ?? null,
+            followedTeams: teamRows.map((t) => t.name),
+            followedCompetitions: compRows.map((c) => c.name),
+            followedSports: user.subscriptions
+              .filter((s) => s.entityType === 'sport')
+              .map((s) => s.category),
+          },
+          stages,
+          seed: `${user.id}:${event.id}`,
+        },
+        minsUntilByStage,
+      );
+
+      return { eventId: event.id, score, reasons, stages, storyline };
+    },
+  );
 
   // Fire a real push at a specific user to end-to-end test the pipeline
   // (Expo → FCM/APNS → device). Behind the X-Admin-Secret guard so you can

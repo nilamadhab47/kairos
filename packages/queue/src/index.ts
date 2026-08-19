@@ -18,5 +18,15 @@ export { processDeliverPushJob } from './jobs/deliver-push.js';
 export { processCheckPushReceiptsJob } from './jobs/check-push-receipts.js';
 export { processSchedulePreEventJob } from './jobs/schedule-pre-event.js';
 export { composeCopy, type CopyContext, type CopyKind } from './lib/copy.js';
+export {
+  generateStoryline,
+  type StoryContext,
+  type StoryStage,
+  type StoryEvent,
+  type StoryUser,
+  type Storyline,
+  type StoryChapter,
+} from './lib/storyteller.js';
+export { scoreEventForUser, stagesForScore } from './lib/event-importance.js';
 export { enrichLogosFromTheSportsDb } from './jobs/enrich-logos.js';
 export type { EnrichLogosJobData, EnrichLogosResult } from './jobs/enrich-logos.js';

@@ -52,6 +52,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
           body: n.body,
           status: n.status,
           aiGenerated: n.aiGenerated,
+          importanceScore: n.importanceScore,
           scheduledFor: n.scheduledFor.toISOString(),
           sentAt: n.sentAt?.toISOString() ?? null,
           readAt: n.readAt?.toISOString() ?? null,

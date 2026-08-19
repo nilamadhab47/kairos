@@ -251,6 +251,14 @@ model Notification {
   //   [{ deviceId, ticketId, ticketStatus, ticketError, receiptStatus, receiptError }]
   deliveryAttempts Json?     @map("delivery_attempts")
 
+  // Storyline metadata (populated by the storyteller):
+  //   candidates       — every LLM/template candidate we considered
+  //                      { llmModel?, seed, stage, options: [{title,body,source}], picked: {title,body} }
+  //   importanceScore  — 0..100 relevance for (user, event); drives which
+  //                      stages fire (morning_teaser / midday_hype / pre_event).
+  candidates       Json?     @map("candidates")
+  importanceScore  Int?      @map("importance_score")
+
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
