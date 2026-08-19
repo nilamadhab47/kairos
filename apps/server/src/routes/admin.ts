@@ -45,6 +45,110 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     },
   ];
 
+  // Fire a real push at a specific user to end-to-end test the pipeline
+  // (Expo → FCM/APNS → device). Behind the X-Admin-Secret guard so you can
+  // hit it from anywhere without a session — perfect for smoke-testing
+  // after a deploy.
+  //
+  // Example:
+  //   curl -X POST "$API/api/admin/push/test" \
+  //     -H "X-Admin-Secret: $ADMIN_BACKFILL_SECRET" \
+  //     -H "Content-Type: application/json" \
+  //     -d '{"userEmail":"nil@joincruit.com"}'
+  //
+  // The returned `notificationId` is what you pass to
+  // GET /api/admin/push/health (or query the DB directly) to see the
+  // full lifecycle: sent → delivered (after ~15 min receipt poll).
+  app.post(
+    '/api/admin/push/test',
+    {
+      preHandler: backfillGuard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Enqueue a real Expo push to a user for smoke-testing',
+        body: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            userEmail: { type: 'string' },
+            title: { type: 'string' },
+            body: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const b = (req.body ?? {}) as {
+        userId?: string;
+        userEmail?: string;
+        title?: string;
+        body?: string;
+      };
+
+      const user = b.userId
+        ? await prisma.user.findUnique({ where: { id: b.userId } })
+        : b.userEmail
+          ? await prisma.user.findUnique({ where: { email: b.userEmail } })
+          : null;
+
+      if (!user) {
+        return reply.code(404).send({
+          error: 'user_not_found',
+          message: 'Provide `userId` or `userEmail` for an existing user.',
+        });
+      }
+
+      const devices = await prisma.userDevice.findMany({
+        where: { userId: user.id, isActive: true },
+      });
+      if (devices.length === 0) {
+        return reply.code(400).send({
+          error: 'no_devices',
+          message:
+            'User has no active push devices. Open the app on a signed-in device to register a token.',
+        });
+      }
+
+      const notification = await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'test',
+          channel: 'push',
+          title: b.title ?? 'Kairos push test',
+          body:
+            b.body ??
+            `If you can read this on your lockscreen, delivery is working. ${new Date().toLocaleTimeString()}`,
+          aiGenerated: false,
+          status: 'pending',
+          scheduledFor: new Date(),
+        },
+      });
+
+      const job = await enqueueDeliverPush(
+        { notificationId: notification.id },
+        { jobId: `push:${notification.id}` },
+      );
+
+      return {
+        ok: true,
+        notificationId: notification.id,
+        userId: user.id,
+        activeDevices: devices.map((d) => ({
+          id: d.id,
+          platform: d.platform,
+          deviceName: d.deviceName,
+          tokenPrefix: d.expoPushToken.slice(0, 20),
+        })),
+        job,
+        followUp: {
+          checkStatus: `GET /api/admin/push/health`,
+          expectedFlow:
+            'status: pending → sent (within seconds) → delivered (after ~15 min, once the receipt poller runs)',
+        },
+      };
+    },
+  );
+
   // Fast operational rollup for push delivery. Non-destructive, and cheap
   // enough to hit from the Railway logs UI whenever a delivery looks off.
   app.get(
