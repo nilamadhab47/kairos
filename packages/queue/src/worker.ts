@@ -13,6 +13,7 @@ import { ingestTennisMatches } from './jobs/ingest-tennis.js';
 import { processDeliverPushJob } from './jobs/deliver-push.js';
 import { processCheckPushReceiptsJob } from './jobs/check-push-receipts.js';
 import { processSchedulePreEventJob } from './jobs/schedule-pre-event.js';
+import { processScheduleDiscoveryJob } from './jobs/schedule-discovery.js';
 import { enrichLogosFromTheSportsDb, type EnrichLogosJobData } from './jobs/enrich-logos.js';
 import { initSportsProviders } from '@kairo/sports';
 import type {
@@ -113,6 +114,15 @@ workers.push(
   new Worker(
     QUEUE_NAMES.pushReceipts,
     async () => processCheckPushReceiptsJob(),
+    { connection, concurrency: 1 },
+  ),
+);
+
+// Discovery briefings — gated per user to local morning window + per-day idempotent.
+workers.push(
+  new Worker(
+    QUEUE_NAMES.discovery,
+    async () => processScheduleDiscoveryJob(),
     { connection, concurrency: 1 },
   ),
 );

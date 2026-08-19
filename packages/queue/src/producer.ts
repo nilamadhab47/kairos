@@ -116,6 +116,21 @@ export async function enqueueSchedulePreEvent(
   return { id: job.id ?? 'unknown', queue: queue.name };
 }
 
+export type ScheduleDiscoveryJobData = Record<string, never>;
+
+export async function enqueueScheduleDiscovery(
+  data: ScheduleDiscoveryJobData = {} as ScheduleDiscoveryJobData,
+  opts?: JobsOptions,
+): Promise<{ id: string; queue: string }> {
+  const queue = getQueue<ScheduleDiscoveryJobData>(QUEUE_NAMES.discovery);
+  const job = await queue.add('schedule-discovery', data, {
+    removeOnComplete: 50,
+    removeOnFail: 50,
+    ...opts,
+  });
+  return { id: job.id ?? 'unknown', queue: queue.name };
+}
+
 export async function enqueueEnrichLogos(
   data: EnrichLogosJobData = {},
   opts?: JobsOptions,
@@ -168,6 +183,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
   const summary: Array<{ queue: string; name: string; every: number }> = [];
   const ingestQueue = getQueue<IngestSportJobData>(QUEUE_NAMES.ingestSports);
   const preEventQueue = getQueue<SchedulePreEventJobData>(QUEUE_NAMES.preEvent);
+  const discoveryQueue = getQueue<ScheduleDiscoveryJobData>(QUEUE_NAMES.discovery);
   const receiptsQueue = getQueue<CheckPushReceiptsJobData>(QUEUE_NAMES.pushReceipts);
 
   // Cadences (ms):
@@ -177,6 +193,11 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     cricket: 30 * 60_000,       // 30m — live-heavy
     tennis: 12 * 60 * 60_000,   // 12h
     preEvent: 30 * 60_000,      // 30m
+    // Discovery briefings are gated to users' local 07:00-11:00 window and
+    // idempotent per local day, so a fast cadence just means we cover more
+    // timezones without dupes. 90m ≈ every timezone gets a check inside its
+    // window regardless of when the worker deploys.
+    discovery: 90 * 60_000,     // 90m
     pushReceipts: 5 * 60_000,   // 5m — Expo receipts are only meaningful >15m after send
   };
 
@@ -186,6 +207,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     { q: ingestQueue as unknown as Queue, name: 'ingest:cricket', data: { sport: 'cricket' }, every: CRON.cricket },
     { q: ingestQueue as unknown as Queue, name: 'ingest:tennis', data: { sport: 'tennis' }, every: CRON.tennis },
     { q: preEventQueue as unknown as Queue, name: 'schedule-pre-event', data: {}, every: CRON.preEvent },
+    { q: discoveryQueue as unknown as Queue, name: 'schedule-discovery', data: {}, every: CRON.discovery },
     { q: receiptsQueue as unknown as Queue, name: 'check-push-receipts', data: {}, every: CRON.pushReceipts },
   ];
 
@@ -225,6 +247,7 @@ export async function unregisterRepeatableJobs(): Promise<void> {
   const queues = [
     getQueue(QUEUE_NAMES.ingestSports),
     getQueue(QUEUE_NAMES.preEvent),
+    getQueue(QUEUE_NAMES.discovery),
     getQueue(QUEUE_NAMES.pushReceipts),
   ];
   for (const q of queues) {

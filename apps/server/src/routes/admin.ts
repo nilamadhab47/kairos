@@ -19,6 +19,14 @@ import {
   scoreEventForUser,
   stagesForScore,
   type StoryStage,
+  horizonFor,
+  computeNovelty,
+  scoreForDiscovery,
+  pickTopForDiscovery,
+  generateDiscoveryPush,
+  processScheduleDiscoveryJob,
+  type DiscoveryCandidate,
+  type StoryAngle,
 } from '@kairo/queue';
 import { sportsRouter, TheSportsDBProvider } from '@kairo/sports';
 
@@ -180,6 +188,239 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       );
 
       return { eventId: event.id, score, reasons, stages, storyline };
+    },
+  );
+
+  // ---------- Discovery layer (upcoming-events briefing) ---------------------
+
+  // Dry-run: what would today's discovery briefing look like for a user?
+  // Returns the ranked candidate events + full copy candidates for the top
+  // picks, WITHOUT persisting notifications or enqueueing anything.
+  //
+  //   curl -X POST "$API/api/admin/push/discovery/preview" \
+  //     -H "X-Admin-Secret: $ADMIN_BACKFILL_SECRET" \
+  //     -H "Content-Type: application/json" \
+  //     -d '{"userEmail":"nil@joincruit.com"}'
+  app.post(
+    '/api/admin/push/discovery/preview',
+    {
+      preHandler: backfillGuard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Dry-run the discovery briefing selection for a user',
+        body: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            userEmail: { type: 'string' },
+            max: { type: 'integer', minimum: 1, maximum: 5 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const b = (req.body ?? {}) as { userId?: string; userEmail?: string; max?: number };
+      const user = b.userId
+        ? await prisma.user.findUnique({
+            where: { id: b.userId },
+            include: {
+              subscriptions: { where: { isActive: true } },
+              notificationPreference: true,
+            },
+          })
+        : b.userEmail
+          ? await prisma.user.findUnique({
+              where: { email: b.userEmail },
+              include: {
+                subscriptions: { where: { isActive: true } },
+                notificationPreference: true,
+              },
+            })
+          : null;
+      if (!user) return reply.code(404).send({ error: 'user_not_found' });
+
+      const tz = user.timezone?.trim() || 'UTC';
+      const now = new Date();
+      const windowStart = new Date(now.getTime() + 24 * 60 * 60_000);
+      const windowEnd = new Date(now.getTime() + 14 * 24 * 60 * 60_000);
+      const categories = [...new Set(user.subscriptions.map((s) => s.category))];
+
+      const events = await prisma.event.findMany({
+        where: {
+          category: { in: categories },
+          status: { in: ['upcoming', 'scheduled', 'live'] },
+          startsAt: { gte: windowStart, lte: windowEnd },
+        },
+        orderBy: { startsAt: 'asc' },
+        take: 200,
+      });
+
+      const eventIds = events.map((e) => e.id);
+      const priors = await prisma.notification.findMany({
+        where: { userId: user.id, channel: 'push', eventId: { in: eventIds } },
+        select: { eventId: true, type: true, createdAt: true, title: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      const priorByEvent = new Map<string, typeof priors>();
+      for (const p of priors) {
+        if (!p.eventId) continue;
+        const list = priorByEvent.get(p.eventId) ?? [];
+        list.push(p);
+        priorByEvent.set(p.eventId, list);
+      }
+
+      const nowMs = now.getTime();
+      const scored: (DiscoveryCandidate & { skipped?: string })[] = [];
+
+      for (const event of events) {
+        const horizon = horizonFor(event.startsAt, now, tz);
+        if (!horizon) continue;
+
+        const prior = priorByEvent.get(event.id) ?? [];
+        const hasStoryline = prior.some((p) =>
+          ['morning_teaser', 'midday_hype', 'pre_event'].includes(p.type),
+        );
+        const lastDiscovery = prior.find((p) => p.type === 'discovery');
+        const lastAny = prior[0];
+
+        const novelty = computeNovelty({
+          hasStoryline,
+          lastDiscoveryDaysAgo: lastDiscovery
+            ? Math.floor((nowMs - lastDiscovery.createdAt.getTime()) / (24 * 60 * 60_000))
+            : null,
+          lastAnyDaysAgo: lastAny
+            ? Math.floor((nowMs - lastAny.createdAt.getTime()) / (24 * 60 * 60_000))
+            : null,
+        });
+
+        const s = scoreForDiscovery(event, user.subscriptions, horizon, novelty);
+        const compTag = (event.contextTags ?? []).find((t) => t.startsWith('competition:'));
+        const cand: DiscoveryCandidate & { skipped?: string } = {
+          event,
+          horizon,
+          ...s,
+          competitionId: compTag ? compTag.slice('competition:'.length) : null,
+        };
+        if (novelty === 0) cand.skipped = hasStoryline ? 'storyline_already_owns' : 'notified_recently';
+        else if (s.total < 45) cand.skipped = 'below_threshold';
+        scored.push(cand);
+      }
+
+      const picked = pickTopForDiscovery(
+        scored.filter((c) => !c.skipped),
+        Math.min(b.max ?? 3, 5),
+      );
+
+      // Generate copy for each pick — same path the real job takes.
+      const followedTeamIds = user.subscriptions
+        .filter((s) => s.entityType === 'team')
+        .map((s) => s.entityId);
+      const followedCompIds = user.subscriptions
+        .filter((s) => s.entityType === 'competition')
+        .map((s) => s.entityId);
+      const [teamRows, compRows] = await Promise.all([
+        followedTeamIds.length > 0
+          ? prisma.team.findMany({ where: { id: { in: followedTeamIds } }, select: { name: true } })
+          : Promise.resolve([]),
+        followedCompIds.length > 0
+          ? prisma.competition.findMany({
+              where: { id: { in: followedCompIds } },
+              select: { name: true },
+            })
+          : Promise.resolve([]),
+      ]);
+      const storyUser = {
+        id: user.id,
+        firstName: user.name?.split(' ')[0]?.trim() ?? null,
+        followedTeams: teamRows.map((t) => t.name),
+        followedCompetitions: compRows.map((c) => c.name),
+        followedSports: user.subscriptions
+          .filter((s) => s.entityType === 'sport')
+          .map((s) => s.category),
+      };
+
+      const usedAngles: StoryAngle[] = [];
+      const briefing: Array<Record<string, unknown>> = [];
+      for (const p of picked) {
+        const m = (p.event.metadata ?? {}) as {
+          homeTeam?: { name?: string } | null;
+          awayTeam?: { name?: string } | null;
+          round?: string | null;
+        };
+        const chapterRows = await prisma.notification.findMany({
+          where: { userId: user.id, eventId: p.event.id, type: 'discovery' },
+          orderBy: { createdAt: 'asc' },
+          select: { title: true },
+          take: 5,
+        });
+        const gen = await generateDiscoveryPush({
+          event: {
+            id: p.event.id,
+            sport: p.event.category,
+            sportLabel: p.event.category,
+            competition: p.event.subtitle?.split(' · ')[0]?.trim() ?? null,
+            homeTeam: m.homeTeam?.name ?? null,
+            awayTeam: m.awayTeam?.name ?? null,
+            round: m.round ?? null,
+            startsAt: p.event.startsAt,
+            isDerby: p.importanceReasons.includes('derby'),
+            isFinal: p.importanceReasons.includes('final_or_semi'),
+            prestige: p.importanceReasons.includes('prestige_competition'),
+          },
+          user: storyUser,
+          horizon: p.horizon,
+          usedAngles,
+          previousChapters: chapterRows.map((r) => r.title),
+          seed: `${user.id}:${p.event.id}:preview`,
+        });
+        if (gen) usedAngles.push(gen.chosen.angle);
+        briefing.push({
+          eventId: p.event.id,
+          horizon: p.horizon,
+          score: p.total,
+          scoreBreakdown: {
+            importance: p.importance,
+            horizon: p.horizonWeight,
+            novelty: p.novelty,
+            reasons: p.importanceReasons,
+          },
+          title: p.event.title,
+          startsAt: p.event.startsAt,
+          copy: gen?.chosen ?? null,
+          candidates: gen?.candidates ?? [],
+        });
+      }
+
+      return {
+        userId: user.id,
+        timezone: tz,
+        eventsInWindow: events.length,
+        scoredCount: scored.length,
+        skipped: scored
+          .filter((c) => c.skipped)
+          .map((c) => ({ eventId: c.event.id, reason: c.skipped, score: c.total })),
+        briefing,
+      };
+    },
+  );
+
+  // Trigger the discovery briefing job for ALL eligible users immediately.
+  // Same code path as the repeatable cron, just fired ad-hoc.
+  //
+  //   curl -X POST "$API/api/admin/push/discovery/run" \
+  //     -H "X-Admin-Secret: $ADMIN_BACKFILL_SECRET"
+  app.post(
+    '/api/admin/push/discovery/run',
+    {
+      preHandler: backfillGuard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Force-run the discovery briefing job immediately (all users)',
+      },
+    },
+    async () => {
+      const result = await processScheduleDiscoveryJob();
+      return result;
     },
   );
 
