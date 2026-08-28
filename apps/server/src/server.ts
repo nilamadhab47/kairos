@@ -33,7 +33,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(
-        '[scheduler] could not register repeatable jobs (Redis likely unavailable):',
+        '[scheduler] could not register repeatable jobs:',
         err instanceof Error ? err.message : String(err),
       );
     }

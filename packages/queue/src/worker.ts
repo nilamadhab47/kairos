@@ -23,7 +23,7 @@ import type {
   IngestSportJobData,
   SchedulePreEventJobData,
 } from './producer.js';
-import { enqueueSchedulePreEvent, enqueueEnrichMatchEvents } from './producer.js';
+import { enqueueSchedulePreEvent, enqueueEnrichMatchEvents, safeJobId } from './producer.js';
 
 loadDotenv({ path: resolve(process.cwd(), '../../.env') });
 loadDotenv({ path: resolve(process.cwd(), '.env') });
@@ -87,7 +87,7 @@ workers.push(
       }
       // After fresh fixtures land, schedule pre-event pushes for subscribed users.
       try {
-        await enqueueSchedulePreEvent({}, { jobId: `post-ingest-pre-event:${job.id ?? Date.now()}` });
+        await enqueueSchedulePreEvent({}, { jobId: safeJobId('post-ingest-pre-event', job.id ?? Date.now()) });
       } catch {
         // Non-fatal — repeatable pre-event job remains the safety net.
       }
@@ -95,7 +95,7 @@ workers.push(
         try {
           await enqueueEnrichMatchEvents(
             {},
-            { jobId: `post-ingest-enrich-events:${sport}:${job.id ?? Date.now()}` },
+            { jobId: safeJobId('post-ingest-enrich-events', sport, job.id ?? Date.now()) },
           );
         } catch {
           // Non-fatal — repeatable enrich job remains the safety net.

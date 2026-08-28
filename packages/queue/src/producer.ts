@@ -15,6 +15,14 @@ export function getQueue<T = unknown>(name: QueueName): Queue<T> {
   return queue;
 }
 
+/** BullMQ custom job ids cannot contain `:`. */
+export function safeJobId(...parts: Array<string | number>): string {
+  return parts
+    .map((p) => String(p).replace(/:/g, '-'))
+    .filter(Boolean)
+    .join('-');
+}
+
 export interface TestJobData {
   message: string;
   enqueuedAt: string;
@@ -273,7 +281,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
   for (const s of specs) {
     await s.q.add(s.name, s.data as never, {
       repeat: { every: s.every },
-      jobId: `repeat:${s.name}`,
+      jobId: safeJobId('repeat', s.name),
       removeOnComplete: 50,
       removeOnFail: 50,
     });
@@ -288,7 +296,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
   for (const s of specs) {
     if (!s.name.startsWith('ingest:')) continue;
     await s.q.add(`${s.name}:boot`, s.data as never, {
-      jobId: `boot:${s.name}:${bootId}`,
+      jobId: safeJobId('boot', s.name, bootId),
       removeOnComplete: 10,
       removeOnFail: 10,
       // Small delay so the worker has time to attach after redeploys.
@@ -300,7 +308,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     'enrich-match-events:boot',
     {} as never,
     {
-      jobId: `boot:enrich-match-events:${bootId}`,
+      jobId: safeJobId('boot', 'enrich-match-events', bootId),
       removeOnComplete: 10,
       removeOnFail: 10,
       delay: 20_000,
