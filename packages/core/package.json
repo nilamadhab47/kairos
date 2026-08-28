@@ -12,7 +12,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "echo \"(no lint configured)\"",
-    "test:normalize": "tsx src/normalize.test.ts"
+    "test:normalize": "tsx src/normalize.test.ts",
+    "test:subscriptions": "tsx src/subscriptions.test.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"

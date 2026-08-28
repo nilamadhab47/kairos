@@ -22,7 +22,7 @@ import {
   type CompetitionFormat,
   type Sport as NormalizerSport,
 } from '@kairo/core';
-import type { NormalizedMatch, NormalizedStandings, ProviderRef, SportId } from './types.js';
+import type { NormalizedMatch, NormalizedStandings, NormalizedMatchEvent, ProviderRef, SportId } from './types.js';
 
 function buildEventMetadata(
   matchId: string,
@@ -251,12 +251,19 @@ async function upsertTeam(
 ): Promise<string | null> {
   if (!team?.name) return null;
   const externalRefId = team.id.split(':').slice(2).join(':') || team.id;
-
-  const existing = await prisma.team.findFirst({
-    where: { sportId: sport, name: team.name },
-  });
-
   const providerRef: ProviderRef = { provider, externalId: externalRefId };
+
+  const existingByRef = await prisma.team.findFirst({
+    where: {
+      sportId: sport,
+      providerRefs: { array_contains: [providerRef] as any },
+    },
+  });
+  const existing =
+    existingByRef ??
+    (await prisma.team.findFirst({
+      where: { sportId: sport, name: team.name },
+    }));
   const inferredType = inferTeamType({
     sport: sport as NormalizerSport,
     teamName: team.name,
@@ -606,4 +613,24 @@ export async function findCompetitionIdByProvider(
     }
   }
   return null;
+}
+
+/** Replace persisted match events for a match. Empty list is a no-op (don't wipe on a failed fetch). */
+export async function replaceMatchEvents(
+  matchId: string,
+  events: NormalizedMatchEvent[],
+): Promise<number> {
+  if (events.length === 0) return 0;
+  await prisma.matchEvent.deleteMany({ where: { matchId } });
+  await prisma.matchEvent.createMany({
+    data: events.map((e) => ({
+      matchId,
+      minute: e.minute ?? null,
+      type: e.type,
+      team: e.team,
+      playerName: truncate(e.playerName, 255),
+      detail: e.detail ?? null,
+    })),
+  });
+  return events.length;
 }

@@ -38,6 +38,13 @@ export interface SearchTeamsOpts {
   competitionId?: string;
 }
 
+export interface FetchMatchEventsOpts {
+  /** ESPN league slug such as `eng.1` — avoids probing every league. */
+  leagueSlug?: string;
+  homeTeamExternalId?: string;
+  awayTeamExternalId?: string;
+}
+
 export interface SportsProvider {
   readonly config: SportsProviderConfig;
 
@@ -57,7 +64,10 @@ export interface SportsProvider {
   fetchStandings?(opts: FetchStandingsOpts): Promise<NormalizedStandings | null>;
 
   /** Match events (goals, cards, etc.) */
-  fetchMatchEvents?(matchId: string): Promise<NormalizedMatchEvent[]>;
+  fetchMatchEvents?(
+    matchId: string,
+    opts?: FetchMatchEventsOpts,
+  ): Promise<NormalizedMatchEvent[]>;
 
   /** Cricket scorecard (cricket providers only) */
   fetchCricketScorecard?(matchId: string): Promise<CricketScorecard | null>;

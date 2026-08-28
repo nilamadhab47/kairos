@@ -21,6 +21,7 @@ import type {
   FetchMatchesOpts,
   FetchStandingsOpts,
   SearchTeamsOpts,
+  FetchMatchEventsOpts,
 } from '../provider.js';
 import type {
   NormalizedMatch,
@@ -36,6 +37,8 @@ import type {
 import { providerFetchJson, setRateLimit } from '../http.js';
 
 const SITE = 'https://site.api.espn.com/apis/site/v2';
+/** Same JSON as SITE, but this host is less often Cloudflare-blocked. */
+const SITE_WEB = 'https://site.web.api.espn.com/apis/site/v2';
 const WEB = 'https://site.web.api.espn.com/apis/v2';
 const CORE = 'https://sports.core.api.espn.com/v2';
 const PROVIDER = 'ESPN';
@@ -213,6 +216,126 @@ function fmtYearMonth(d: Date): string {
 
 function addUtcMonths(d: Date, months: number): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
+}
+
+const ESPN_SKIP_EVENT =
+  /kickoff|halftime|start[- ]?2nd|end regular|start delay|end delay|end of|second half begins|first half begins/i;
+
+function soccerSlugsToTry(preferred?: string): string[] {
+  const cleaned = preferred?.trim().replace(/^soccer\//, '');
+  const football = ESPN_LEAGUES.football ?? [];
+  if (cleaned) {
+    return [cleaned, ...football.map((l) => l.league).filter((s) => s !== cleaned)];
+  }
+  return football.map((l) => l.league);
+}
+
+function parseClockMinute(clock: unknown): number | undefined {
+  const c = clock as { displayValue?: string; value?: number } | null | undefined;
+  const display = c?.displayValue?.trim();
+  if (display) {
+    const m = display.match(/(\d+)\s*(?:'\s*\+\s*(\d+))?/);
+    if (m) return Number(m[1]) + (m[2] ? Number(m[2]) : 0);
+  }
+  const v = c?.value;
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return v > 130 ? Math.floor(v / 60) : Math.floor(v);
+  }
+  return undefined;
+}
+
+function competitorSides(data: any): { home?: string; away?: string } {
+  const comps = data?.header?.competitions?.[0]?.competitors;
+  if (!Array.isArray(comps)) return {};
+  const home = comps.find((c: any) => c?.homeAway === 'home');
+  const away = comps.find((c: any) => c?.homeAway === 'away');
+  return {
+    home: home?.id != null ? String(home.id) : home?.team?.id != null ? String(home.team.id) : undefined,
+    away: away?.id != null ? String(away.id) : away?.team?.id != null ? String(away.team.id) : undefined,
+  };
+}
+
+function teamIdOf(raw: unknown): string | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw === 'string' || typeof raw === 'number') return String(raw);
+  const obj = raw as { id?: string | number };
+  return obj.id != null ? String(obj.id) : undefined;
+}
+
+function playerFromEvent(raw: any): string | undefined {
+  const parts = raw?.participants ?? raw?.athletesInvolved ?? [];
+  if (!Array.isArray(parts) || parts.length === 0) return undefined;
+  const first = parts[0];
+  return (
+    first?.athlete?.displayName ??
+    first?.displayName ??
+    first?.athlete?.shortName ??
+    undefined
+  );
+}
+
+function classifyEspnEvent(raw: any): NormalizedMatchEvent['type'] | null {
+  const slug = String(raw?.type?.type ?? raw?.type?.text ?? '').toLowerCase();
+  const text = String(raw?.text ?? raw?.shortText ?? '');
+  if (ESPN_SKIP_EVENT.test(slug) || ESPN_SKIP_EVENT.test(text)) return null;
+  if (raw?.redCard) return 'card';
+  if (raw?.ownGoal || /own[- ]?goal/.test(slug)) return 'goal';
+  if (raw?.penaltyKick || /missed[- ]?penalty/.test(slug)) return 'penalty';
+  if (/penalty/.test(slug)) return 'penalty';
+  if (raw?.scoringPlay || /^goal$/.test(slug) || slug.includes('goal')) return 'goal';
+  if (slug.includes('card') || /yellow|red/.test(slug)) return 'card';
+  if (slug.includes('sub')) return 'substitution';
+  if (slug.includes('var')) return 'var';
+  return null;
+}
+
+function sideForTeamId(
+  teamId: string | undefined,
+  homeId?: string,
+  awayId?: string,
+): 'home' | 'away' {
+  if (teamId && awayId && teamId === awayId) return 'away';
+  if (teamId && homeId && teamId === homeId) return 'home';
+  return 'home';
+}
+
+/**
+ * Map an ESPN soccer summary payload into MatchEvent rows.
+ * Prefers `keyEvents` (goals, cards, subs); falls back to scoring `details`.
+ */
+export function parseEspnSoccerSummary(
+  data: unknown,
+  matchId: string,
+  opts?: { homeTeamExternalId?: string; awayTeamExternalId?: string },
+): NormalizedMatchEvent[] {
+  const payload = data as any;
+  const fromHeader = competitorSides(payload);
+  const homeId = opts?.homeTeamExternalId ?? fromHeader.home;
+  const awayId = opts?.awayTeamExternalId ?? fromHeader.away;
+
+  const keyEvents: any[] = Array.isArray(payload?.keyEvents) ? payload.keyEvents : [];
+  const source =
+    keyEvents.length > 0
+      ? keyEvents
+      : Array.isArray(payload?.header?.competitions?.[0]?.details)
+        ? payload.header.competitions[0].details
+        : [];
+
+  const out: NormalizedMatchEvent[] = [];
+  for (const raw of source) {
+    const type = classifyEspnEvent(raw);
+    if (!type) continue;
+    const teamId = teamIdOf(raw.team);
+    out.push({
+      matchId,
+      minute: parseClockMinute(raw.clock ?? raw.time),
+      type,
+      team: sideForTeamId(teamId, homeId, awayId),
+      playerName: playerFromEvent(raw),
+      detail: typeof raw.text === 'string' ? raw.text : raw.shortText,
+    });
+  }
+  return out.slice(0, 200);
 }
 
 export class ESPNProvider implements SportsProvider {
@@ -422,37 +545,28 @@ export class ESPNProvider implements SportsProvider {
     }
   }
 
-  async fetchMatchEvents(matchId: string): Promise<NormalizedMatchEvent[]> {
-    const externalId = matchId.replace(/^espn:/, '');
-    // We need to know which sport/league the event belongs to; try soccer summary first
-    // Callers can iterate; keep this best-effort.
-    for (const lg of Object.values(ESPN_LEAGUES).flat()) {
-      try {
-        const url = `${SITE}/sports/${lg.sport}/${lg.league}/summary?event=${externalId}`;
-        const data = await fetchJson<any>(url);
-        const details = data?.plays ?? data?.details ?? [];
-        if (!Array.isArray(details) || details.length === 0) continue;
-
-        return details
-          .filter((d: any) => d.scoringPlay || d.type?.text)
-          .slice(0, 200)
-          .map((d: any) => ({
-            matchId,
-            minute: d.clock?.value ? Math.floor(d.clock.value / 60) : undefined,
-            type: /goal/i.test(d.type?.text ?? '')
-              ? 'goal'
-              : /card/i.test(d.type?.text ?? '')
-              ? 'card'
-              : /sub/i.test(d.type?.text ?? '')
-              ? 'substitution'
-              : 'other',
-            team: d.team?.id ? 'home' : 'home',
-            playerName: d.athletesInvolved?.[0]?.displayName,
-            detail: d.text ?? d.shortText,
-          }));
-      } catch {
-        // continue
+  async fetchMatchEvents(
+    matchId: string,
+    opts?: FetchMatchEventsOpts,
+  ): Promise<NormalizedMatchEvent[]> {
+    const externalId = matchId.replace(/^espn:/i, '');
+    const slugs = soccerSlugsToTry(opts?.leagueSlug);
+    for (const league of slugs) {
+      for (const origin of [SITE_WEB, SITE]) {
+        try {
+          const url = `${origin}/sports/soccer/${league}/summary?event=${externalId}`;
+          const data = await fetchJson<unknown>(url);
+          // A 200 for this event id is authoritative — don't probe other leagues.
+          return parseEspnSoccerSummary(data, matchId, {
+            homeTeamExternalId: opts?.homeTeamExternalId,
+            awayTeamExternalId: opts?.awayTeamExternalId,
+          });
+        } catch {
+          // try next host / league
+        }
       }
+      // Preferred slug exhausted both hosts; only then fan out.
+      if (opts?.leagueSlug) continue;
     }
     return [];
   }

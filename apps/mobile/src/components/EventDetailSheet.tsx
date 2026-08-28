@@ -14,7 +14,7 @@ import {
   BottomSheetScrollView,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Countdown } from './Countdown';
 import { StatusPill, type MatchState } from './StatusPill';
 import { TeamCrest } from './TeamCrest';
@@ -156,6 +156,24 @@ function SheetBody({
     day: 'numeric',
     timeZone: timezone,
   });
+  const matchId = typeof meta.matchId === 'string' ? meta.matchId : event.id;
+  const showMoments = isMatch && (state === 'ft' || state === 'live');
+  const detail = useQuery({
+    queryKey: ['match-detail', matchId],
+    queryFn: () =>
+      api<{
+        match: {
+          score?: { home: number | null; away: number | null };
+          events?: MatchMoment[];
+        };
+      }>(`/api/matches/${matchId}`),
+    enabled: showMoments,
+    retry: false,
+  });
+  const score = detail.data?.match.score ?? meta.score;
+  const moments = (detail.data?.match.events ?? []).filter((e) =>
+    ['goal', 'card', 'substitution', 'penalty', 'var'].includes(e.type),
+  );
 
   return (
     <BottomSheetScrollView contentContainerStyle={styles.content}>
@@ -186,11 +204,11 @@ function SheetBody({
             </Text>
           </View>
           <View style={styles.vsCol}>
-            {meta.score && (meta.score.home != null || meta.score.away != null) ? (
+            {score && (score.home != null || score.away != null) ? (
               <Text style={[styles.score, { color: theme.color.text }]}>
-                {meta.score.home ?? 0}
+                {score.home ?? 0}
                 <Text style={{ color: theme.color.textFaint }}> – </Text>
-                {meta.score.away ?? 0}
+                {score.away ?? 0}
               </Text>
             ) : (
               <Text style={[styles.vs, { color: theme.color.textFaint }]}>VS</Text>
@@ -231,6 +249,40 @@ function SheetBody({
         {meta.round ? <MetaRow label="Round" value={String(meta.round)} /> : null}
         {meta.provider ? <MetaRow label="Source" value={String(meta.provider)} /> : null}
       </View>
+
+      {showMoments && moments.length > 0 ? (
+        <View
+          style={[
+            styles.metaCard,
+            { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border, marginTop: spacing[4] },
+          ]}
+        >
+          <Text style={[styles.countdownLabel, { color: theme.color.textFaint, marginBottom: spacing[1] }]}>
+            KEY MOMENTS
+          </Text>
+          {moments.map((m) => (
+            <View key={m.id} style={styles.momentRow}>
+              <Text style={[styles.momentMin, { color: theme.color.textFaint }]}>
+                {m.minute != null ? `${m.minute}'` : '—'}
+              </Text>
+              <Text style={styles.momentIcon}>{momentGlyph(m)}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.momentPlayer, { color: theme.color.text }]} numberOfLines={1}>
+                  {m.playerName ?? momentFallback(m.type)}
+                </Text>
+                <Text style={[styles.momentMeta, { color: theme.color.textMuted }]} numberOfLines={1}>
+                  {[
+                    m.team === 'away' ? meta.awayTeam?.name : meta.homeTeam?.name,
+                    momentLabel(m),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View style={styles.actions}>
         <Pressable
@@ -283,9 +335,53 @@ function MetaRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+type MatchMoment = {
+  id: string;
+  minute: number | null;
+  type: string;
+  team: string | null;
+  playerName: string | null;
+  detail: string | null;
+};
+
+function momentGlyph(m: MatchMoment): string {
+  if (m.type === 'goal') return '⚽';
+  if (m.type === 'penalty') return m.detail?.toLowerCase().includes('miss') ? '❌' : '⚽';
+  if (m.type === 'substitution') return '🔄';
+  if (m.type === 'var') return '📺';
+  if (m.type === 'card') {
+    return m.detail?.toLowerCase().includes('red') ? '🟥' : '🟨';
+  }
+  return '•';
+}
+
+function momentLabel(m: MatchMoment): string | null {
+  if (m.type === 'goal') return m.detail?.toLowerCase().includes('own') ? 'Own goal' : null;
+  if (m.type === 'penalty') return m.detail ?? 'Penalty';
+  if (m.type === 'card') return m.detail ?? 'Card';
+  if (m.type === 'substitution') return 'Sub';
+  if (m.type === 'var') return 'VAR';
+  return m.detail;
+}
+
+function momentFallback(type: string): string {
+  switch (type) {
+    case 'goal':
+      return 'Goal';
+    case 'penalty':
+      return 'Penalty';
+    case 'card':
+      return 'Card';
+    case 'substitution':
+      return 'Substitution';
+    default:
+      return type;
+  }
+}
+
 function mapStatus(s: string): MatchState {
   if (s === 'live') return 'live';
-  if (s === 'ft' || s === 'finished' || s === 'complete') return 'ft';
+  if (s === 'ft' || s === 'finished' || s === 'complete' || s === 'completed') return 'ft';
   if (s === 'postponed') return 'postponed';
   if (s === 'cancelled') return 'cancelled';
   return 'upcoming';
@@ -370,6 +466,16 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing[4] },
   metaLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 0.3, minWidth: 56 },
   metaValue: { flex: 1, fontSize: 14, fontWeight: '600', textAlign: 'right' },
+  momentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingVertical: 6,
+  },
+  momentMin: { width: 36, fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  momentIcon: { fontSize: 14, width: 22, textAlign: 'center' },
+  momentPlayer: { fontSize: 14, fontWeight: '600' },
+  momentMeta: { fontSize: 12, fontWeight: '500', marginTop: 1 },
   actions: {
     flexDirection: 'row',
     gap: spacing[3],

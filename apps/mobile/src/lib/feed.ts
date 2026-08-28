@@ -61,6 +61,7 @@ export function matchToEvent(m: FeedMatch): TodayEvent {
         : undefined,
       score: m.score,
       venue: m.venue ?? undefined,
+      round: m.round ?? undefined,
     },
   };
 }

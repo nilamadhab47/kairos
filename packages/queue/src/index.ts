@@ -8,8 +8,12 @@ export {
   isFootballConfigured,
   searchFootballTeams,
   CURATED_FOOTBALL_LEAGUES,
+  UEFA_ESPN_SLUGS,
+  UEFA_ESPN_MONTHS_AHEAD,
 } from './jobs/ingest-football.js';
 export type { IngestFootballResult, IngestFootballLeagueResult } from './jobs/ingest-football.js';
+export { ingestUclCalendar, UCL_ESPN_MONTHS_AHEAD } from './jobs/ingest-ucl.js';
+export type { IngestUclResult } from './jobs/ingest-ucl.js';
 export { ingestCricketMatches, discoverIndiaSeries } from './jobs/ingest-cricket.js';
 export type { IngestCricketResult, IngestCricketSeriesResult } from './jobs/ingest-cricket.js';
 export { ingestTennisMatches } from './jobs/ingest-tennis.js';
@@ -48,3 +52,5 @@ export {
 } from './lib/discovery-storyteller.js';
 export { enrichLogosFromTheSportsDb } from './jobs/enrich-logos.js';
 export type { EnrichLogosJobData, EnrichLogosResult } from './jobs/enrich-logos.js';
+export { enrichMatchEvents } from './jobs/enrich-match-events.js';
+export type { EnrichMatchEventsJobData, EnrichMatchEventsResult } from './jobs/enrich-match-events.js';

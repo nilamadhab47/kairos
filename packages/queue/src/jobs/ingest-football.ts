@@ -23,7 +23,12 @@ import {
   upsertMatches,
   upsertStandings,
 } from '@kairo/sports';
-import type { UpsertBatchResult } from '@kairo/sports';
+import type { NormalizedMatch, UpsertBatchResult } from '@kairo/sports';
+import { ingestUclCalendar, type IngestUclResult } from './ingest-ucl.js';
+
+/** UEFA club competitions — need a longer window than domestic leagues. */
+export const UEFA_ESPN_SLUGS = ['uefa.champions', 'uefa.europa', 'uefa.europa.conf'] as const;
+export const UEFA_ESPN_MONTHS_AHEAD = 10;
 
 /**
  * Curated leagues for optional SportAPI7 / API-Football deep season pulls.
@@ -98,6 +103,8 @@ export interface IngestFootballResult {
     error?: string;
   }>;
   providerErrors: Array<{ provider: string; message: string }>;
+  /** Official UCL calendar (UEFA API + ESPN fallback). */
+  ucl: IngestUclResult | null;
 }
 
 function currentFootballSeason(now = new Date()): number {
@@ -147,6 +154,8 @@ export async function ingestFootballFixtures(opts?: {
   monthsAhead?: number;
   deepSeason?: boolean;
   espnSlugs?: string[];
+  /** Skip the official UCL pull (used by the validation harness). */
+  skipUcl?: boolean;
 }): Promise<IngestFootballResult> {
   const season = opts?.season ?? currentFootballSeason();
   const errors: Array<{ provider: string; message: string }> = [];
@@ -170,35 +179,84 @@ export async function ingestFootballFixtures(opts?: {
   };
 
   try {
-    const window = await espn.fetchSoccerFixtureWindow({
-      monthsAhead,
-      leagueSlugs: opts?.espnSlugs ?? [...ESPN_REMINDER_SOCCER_LEAGUES],
-    });
-    const batch = await upsertMatches(window.matches);
+    const requested = opts?.espnSlugs ?? [...ESPN_REMINDER_SOCCER_LEAGUES];
+    const uefaSet = new Set<string>(UEFA_ESPN_SLUGS);
+    const split = opts?.espnSlugs == null;
+    const domesticSlugs = split ? requested.filter((s) => !uefaSet.has(s)) : requested;
+    const uefaSlugs = split ? requested.filter((s) => uefaSet.has(s)) : [];
+
+    const windows: Array<Awaited<ReturnType<ESPNProvider['fetchSoccerFixtureWindow']>>> = [];
+    if (domesticSlugs.length > 0) {
+      windows.push(
+        await espn.fetchSoccerFixtureWindow({
+          monthsAhead,
+          leagueSlugs: domesticSlugs,
+        }),
+      );
+    }
+    if (uefaSlugs.length > 0) {
+      windows.push(
+        await espn.fetchSoccerFixtureWindow({
+          monthsAhead: Math.max(monthsAhead, UEFA_ESPN_MONTHS_AHEAD),
+          leagueSlugs: uefaSlugs,
+        }),
+      );
+    }
+
+    const seen = new Set<string>();
+    const mergedMatches: NormalizedMatch[] = [];
+    const months = new Set<string>();
+    const byLeague: Record<string, number> = {};
+    for (const window of windows) {
+      for (const m of window.matches) {
+        if (seen.has(m.providerRef.externalId)) continue;
+        seen.add(m.providerRef.externalId);
+        mergedMatches.push(m);
+      }
+      for (const ym of window.months) months.add(ym);
+      for (const [k, v] of Object.entries(window.byLeague)) {
+        byLeague[k] = (byLeague[k] ?? 0) + v;
+      }
+      for (const e of window.errors) {
+        errors.push({
+          provider: `espn:${e.league}:${e.month}`,
+          message: e.message,
+        });
+      }
+    }
+
+    const batch = await upsertMatches(mergedMatches);
     const dayStart = startOfUtcDay();
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-    const today = window.matches.filter((m) => m.startsAt >= dayStart && m.startsAt < dayEnd).length;
-    const upcoming = window.matches.filter((m) => m.startsAt >= dayEnd).length;
+    const today = mergedMatches.filter((m) => m.startsAt >= dayStart && m.startsAt < dayEnd).length;
+    const upcoming = mergedMatches.filter((m) => m.startsAt >= dayEnd).length;
 
     fixturesBatch = {
       ...batch,
       provider: 'ESPN',
-      months: window.months,
-      byLeague: window.byLeague,
+      months: [...months].sort(),
+      byLeague,
       upcoming,
       today,
     };
-    for (const e of window.errors) {
-      errors.push({
-        provider: `espn:${e.league}:${e.month}`,
-        message: e.message,
-      });
-    }
   } catch (err) {
     errors.push({
       provider: 'espn:fixtures',
       message: err instanceof Error ? err.message : String(err),
     });
+  }
+
+  let ucl: IngestUclResult | null = null;
+  if (!opts?.skipUcl) {
+    try {
+      ucl = await ingestUclCalendar();
+      errors.push(...ucl.providerErrors);
+    } catch (err) {
+      errors.push({
+        provider: 'uefa:ucl',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   const leagues: IngestFootballLeagueResult[] = [];
@@ -211,6 +269,7 @@ export async function ingestFootballFixtures(opts?: {
       leagues,
       standings: standingsResults,
       providerErrors: errors,
+      ucl,
     };
   }
 
@@ -346,6 +405,7 @@ export async function ingestFootballFixtures(opts?: {
     leagues,
     standings: standingsResults,
     providerErrors: errors,
+    ucl,
   };
 }
 

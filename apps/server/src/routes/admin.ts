@@ -6,6 +6,7 @@ import {
   enqueueDeliverPush,
   ingestOpenF1Sessions,
   ingestFootballFixtures,
+  ingestUclCalendar,
   ingestCricketMatches,
   ingestTennisMatches,
   isFootballConfigured,
@@ -15,6 +16,9 @@ import {
   enrichLogosFromTheSportsDb,
   enqueueEnrichLogos,
   getEnrichLogosJob,
+  enrichMatchEvents,
+  enqueueEnrichMatchEvents,
+  getEnrichMatchEventsJob,
   generateStoryline,
   scoreEventForUser,
   stagesForScore,
@@ -30,8 +34,8 @@ import {
 } from '@kairo/queue';
 import { sportsRouter, TheSportsDBProvider } from '@kairo/sports';
 
-type Sport = 'f1' | 'football' | 'cricket' | 'tennis';
-const SUPPORTED: Sport[] = ['f1', 'football', 'cricket', 'tennis'];
+type Sport = 'f1' | 'football' | 'cricket' | 'tennis' | 'ucl';
+const SUPPORTED: Sport[] = ['f1', 'football', 'cricket', 'tennis', 'ucl'];
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   // Dev/ops triggers — allow in non-production without auth for local Scalar testing;
@@ -606,6 +610,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
             cricketSegment: { type: 'string', enum: ['upcoming', 'live', 'all'] },
             tennisDaysAhead: { type: 'integer', minimum: 1, maximum: 14 },
             year: { type: 'integer' },
+            uclSeasonYear: { type: 'integer', description: 'UEFA seasonYear (2027 = 2026/27 Champions League)' },
             sync: { type: 'boolean', description: 'Run ingest inline (returns results); default true in dev' },
           },
         },
@@ -620,6 +625,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         cricketSegment?: 'upcoming' | 'live' | 'all';
         tennisDaysAhead?: number;
         year?: number;
+        uclSeasonYear?: number;
         sync?: boolean;
       };
 
@@ -638,6 +644,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           cricketSegment: body.cricketSegment,
           tennisDaysAhead: body.tennisDaysAhead,
           year: body.year,
+          uclSeasonYear: body.uclSeasonYear,
         });
         enqueued.push({ sport, id: job.id });
       }
@@ -659,6 +666,8 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
               sync[sport] = await ingestCricketMatches({ segment: body.cricketSegment ?? 'all' });
             } else if (sport === 'tennis') {
               sync[sport] = await ingestTennisMatches({ daysAhead: body.tennisDaysAhead ?? 7 });
+            } else if (sport === 'ucl') {
+              sync[sport] = await ingestUclCalendar({ seasonYear: body.uclSeasonYear });
             }
           } catch (err) {
             sync[sport] = {
@@ -1148,6 +1157,62 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.post(
+    '/api/admin/enrich-match-events',
+    {
+      preHandler: guard,
+      schema: {
+        tags: ['admin'],
+        summary:
+          'Persist goals/cards/subs for recently completed football matches (ESPN + UEFA). Async by default; sync=true runs inline.',
+        body: {
+          type: 'object',
+          properties: {
+            limit: { type: 'integer', minimum: 1, maximum: 80 },
+            days: { type: 'integer', minimum: 1, maximum: 30 },
+            sync: { type: 'boolean' },
+          },
+        },
+      },
+    },
+    async (req) => {
+      const body = (req.body ?? {}) as { limit?: number; days?: number; sync?: boolean };
+      const { sync, ...jobData } = body;
+      if (sync) {
+        const result = await enrichMatchEvents(jobData);
+        return { mode: 'sync', result };
+      }
+      const job = await enqueueEnrichMatchEvents(jobData);
+      return {
+        mode: 'async',
+        job,
+        pollAt: `/api/admin/enrich-match-events/${job.id}`,
+      };
+    },
+  );
+
+  app.get(
+    '/api/admin/enrich-match-events/:id',
+    {
+      preHandler: guard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Poll an async enrich-match-events job.',
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const status = await getEnrichMatchEventsJob(id);
+      if (!status) return reply.code(404).send({ error: 'job_not_found', id });
+      return status;
+    },
+  );
+
+  app.post(
     '/api/admin/push/smoke',
     {
       preHandler: guard,
@@ -1287,13 +1352,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async () => {
-      const [sports, competitions, teams, matches, standings, assets] = await Promise.all([
+      const [sports, competitions, teams, matches, standings, assets, matchEvents] = await Promise.all([
         prisma.sport.count(),
         prisma.competition.count(),
         prisma.team.count(),
         prisma.match.count(),
         prisma.standing.count(),
         prisma.asset.count(),
+        prisma.matchEvent.count(),
       ]);
       const upcoming = await prisma.match.groupBy({
         by: ['sportId'],
@@ -1304,11 +1370,36 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { lastSyncedAt: 'desc' },
         select: { lastSyncedAt: true, sportId: true },
       });
+      const uclComps = await prisma.competition.findMany({
+        where: {
+          sportId: 'football',
+          OR: [
+            { name: { contains: 'Champions League', mode: 'insensitive' } },
+            { displayName: { contains: 'Champions League', mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true, name: true },
+      });
+      const uclIds = uclComps.map((c) => c.id);
+      const now = new Date();
+      const [uclTotal, uclUpcoming] = uclIds.length
+        ? await Promise.all([
+            prisma.match.count({ where: { competitionId: { in: uclIds } } }),
+            prisma.match.count({
+              where: { competitionId: { in: uclIds }, startsAt: { gte: now } },
+            }),
+          ])
+        : [0, 0];
       return {
-        counts: { sports, competitions, teams, matches, standings, assets },
+        counts: { sports, competitions, teams, matches, standings, assets, matchEvents },
         upcomingBySport: Object.fromEntries(upcoming.map((r) => [r.sportId, r._count._all])),
         lastMatchSyncedAt: latest?.lastSyncedAt?.toISOString() ?? null,
         lastMatchSyncedSport: latest?.sportId ?? null,
+        ucl: {
+          competitions: uclComps.map((c) => c.name),
+          total: uclTotal,
+          upcoming: uclUpcoming,
+        },
       };
     },
   );

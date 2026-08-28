@@ -9,13 +9,15 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc",
+    "test:match-events": "tsx src/match-events.test.ts"
   },
   "dependencies": {
     "@kairo/core": "workspace:*",
     "@kairo/db": "workspace:*"
   },
   "devDependencies": {
+    "tsx": "^4.19.1",
     "typescript": "^5.6.3"
   }
 }

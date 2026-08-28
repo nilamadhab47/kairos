@@ -18,6 +18,7 @@ import { prisma } from '@kairo/db';
 import { initSportsProviders, sportsRouter } from '@kairo/sports';
 import { ingestOpenF1Sessions } from '../src/jobs/ingest-f1.js';
 import { ingestFootballFixtures } from '../src/jobs/ingest-football.js';
+import { ingestUclCalendar } from '../src/jobs/ingest-ucl.js';
 import { ingestCricketMatches } from '../src/jobs/ingest-cricket.js';
 import { ingestTennisMatches } from '../src/jobs/ingest-tennis.js';
 
@@ -77,7 +78,8 @@ async function main(): Promise<void> {
   await run('ingest:cricket', () => ingestCricketMatches({ segment: 'all' }));
   await run('ingest:tennis', () => ingestTennisMatches({ daysAhead: 3 }));
   // Football full-season pull is heavy; scope to the two lightest curated leagues for validation.
-  await run('ingest:football', () => ingestFootballFixtures({ monthsAhead: 3 }));
+  await run('ingest:football', () => ingestFootballFixtures({ monthsAhead: 3, skipUcl: true }));
+  await run('ingest:ucl', () => ingestUclCalendar());
 
   console.log('\n=== post-ingest DB stats ===');
   console.log(fmt(await stats()));

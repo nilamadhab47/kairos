@@ -6,48 +6,95 @@ export type SubRow = {
   entityId: string;
 };
 
+function tagsOf(event: { contextTags?: string[] | null }): string[] {
+  return event.contextTags ?? [];
+}
+
+function idsWithPrefix(tags: string[], prefix: string): Set<string> {
+  return new Set(
+    tags.filter((t) => t.startsWith(prefix)).map((t) => t.slice(prefix.length)),
+  );
+}
+
 /**
- * True when an Event (legacy timeline) matches any active subscription.
+ * True when an Event (legacy timeline) matches the user's follow intent.
+ *
  * Context tags written by upsertMatch:
  *   sportId | competition:<id> | team:<id> | player:<id> | provider:<name>
+ *
+ * Semantics (aligned with personalizedMatchWhere on the feed):
+ *   - Followed team/player in the event → always a hit.
+ *   - Sport-wide follow (no teams for this sport) → every event in the sport.
+ *   - Competition follow with no teams for this sport → every match in that league.
+ *   - Competition follow PLUS preferred teams → do not fan out to every club
+ *     in the league. The competition is a filter, not an expander.
+ *   - Individual-sport events with no team: tags (F1 sessions) still match a
+ *     competition or sport-wide follow.
+ *
+ * Bare unprefixed ids in tags are ignored — they used to false-positive.
  */
 export function eventMatchesSubs(
   event: { category: string; contextTags: string[] },
   subs: SubRow[],
 ): boolean {
-  return subs.some((sub) => {
-    if (sub.category !== event.category) return false;
-    if (sub.entityType === 'category' || sub.entityId === sub.category) return true;
+  const relevant = subs.filter((s) => s.category === event.category);
+  if (relevant.length === 0) return false;
 
-    const tags = event.contextTags ?? [];
-    switch (sub.entityType) {
-      case 'competition':
-        return (
-          tags.includes(`competition:${sub.entityId}`) || tags.includes(sub.entityId)
-        );
-      case 'team':
-        return tags.includes(`team:${sub.entityId}`) || tags.includes(sub.entityId);
-      case 'player':
-      case 'driver':
-        return (
-          tags.includes(`player:${sub.entityId}`) ||
-          tags.includes(`driver:${sub.entityId}`) ||
-          tags.includes(sub.entityId)
-        );
-      default:
-        return (
-          tags.includes(`team:${sub.entityId}`) ||
-          tags.includes(`competition:${sub.entityId}`) ||
-          tags.includes(`player:${sub.entityId}`) ||
-          tags.includes(sub.entityId)
-        );
-    }
-  });
+  const tags = tagsOf(event);
+  const eventTeamIds = idsWithPrefix(tags, 'team:');
+  const eventCompId =
+    tags.find((t) => t.startsWith('competition:'))?.slice('competition:'.length) ?? null;
+  const eventPlayerIds = new Set([
+    ...idsWithPrefix(tags, 'player:'),
+    ...idsWithPrefix(tags, 'driver:'),
+  ]);
+
+  const teamIds = new Set(
+    relevant.filter((s) => s.entityType === 'team').map((s) => s.entityId),
+  );
+  const compIds = new Set(
+    relevant.filter((s) => s.entityType === 'competition').map((s) => s.entityId),
+  );
+  const playerIds = new Set(
+    relevant
+      .filter((s) => s.entityType === 'player' || s.entityType === 'driver')
+      .map((s) => s.entityId),
+  );
+  const sportWide = relevant.some(
+    (s) =>
+      s.entityType === 'category' ||
+      s.entityType === 'sport' ||
+      s.entityId === s.category,
+  );
+
+  for (const id of eventTeamIds) {
+    if (teamIds.has(id)) return true;
+  }
+  for (const id of eventPlayerIds) {
+    if (playerIds.has(id)) return true;
+  }
+
+  // Sessions without sides (F1): a competition or sport-wide follow is enough.
+  const hasSides = eventTeamIds.size > 0;
+
+  if (sportWide && teamIds.size === 0) return true;
+  if (sportWide && !hasSides) return true;
+
+  if (eventCompId && compIds.has(eventCompId)) {
+    if (teamIds.size === 0 || !hasSides) return true;
+    // Preferred teams exist for this sport — already returned on a team hit.
+    return false;
+  }
+
+  return false;
 }
 
 /**
  * Prisma `where` fragment for Match rows that satisfy the given subscriptions.
  * Category-level follows → whole sport; otherwise OR of competition/team ids.
+ *
+ * Prefer `personalizedMatchWhere` for user feeds — this helper does not
+ * narrow a competition follow when the user also picked teams.
  */
 export function matchWhereFromSubs(
   subs: SubRow[],
@@ -74,7 +121,7 @@ export function matchWhereFromSubs(
   if (sportWide.size > 0) {
     or.push({ sportId: { in: [...sportWide] } });
   }
-  if (competitionIds.size > 0) {
+  if (competitionIds.size > 0 && teamIds.size === 0) {
     or.push({ competitionId: { in: [...competitionIds] } });
   }
   if (teamIds.size > 0) {

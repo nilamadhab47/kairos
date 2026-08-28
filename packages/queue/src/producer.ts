@@ -2,6 +2,7 @@ import { Queue, type JobsOptions, type Job } from 'bullmq';
 import { getRedisConnection } from './connection.js';
 import { QUEUE_NAMES, type QueueName } from './queues.js';
 import type { EnrichLogosJobData, EnrichLogosResult } from './jobs/enrich-logos.js';
+import type { EnrichMatchEventsJobData, EnrichMatchEventsResult } from './jobs/enrich-match-events.js';
 
 const queueCache = new Map<QueueName, Queue>();
 
@@ -37,7 +38,7 @@ export async function enqueueTestJob(
  * `sport` is required. Each sport has its own scheduler cadence.
  */
 export type IngestSportJobData = {
-  sport: 'f1' | 'football' | 'cricket' | 'tennis';
+  sport: 'f1' | 'football' | 'cricket' | 'tennis' | 'ucl';
   /** For football: season override (start year). */
   season?: number;
   /** For football: subset of curated leagues. */
@@ -48,6 +49,8 @@ export type IngestSportJobData = {
   tennisDaysAhead?: number;
   /** For F1: explicit year. */
   year?: number;
+  /** For UCL: UEFA seasonYear (2027 = 2026/27). */
+  uclSeasonYear?: number;
 };
 
 export async function enqueueIngestSport(
@@ -174,6 +177,51 @@ export async function getEnrichLogosJob(id: string): Promise<EnrichLogosJobStatu
   };
 }
 
+export async function enqueueEnrichMatchEvents(
+  data: EnrichMatchEventsJobData = {},
+  opts?: JobsOptions,
+): Promise<{ id: string; queue: string }> {
+  const queue = getQueue<EnrichMatchEventsJobData>(QUEUE_NAMES.enrichMatchEvents);
+  const job = await queue.add('enrich-match-events', data, {
+    removeOnComplete: 50,
+    removeOnFail: 50,
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 15_000 },
+    ...opts,
+  });
+  return { id: job.id ?? 'unknown', queue: queue.name };
+}
+
+export type EnrichMatchEventsJobStatus = {
+  id: string;
+  state: 'waiting' | 'active' | 'completed' | 'failed' | 'delayed' | 'unknown';
+  progress?: unknown;
+  result?: EnrichMatchEventsResult | null;
+  failedReason?: string | null;
+  createdAt?: number | null;
+  processedOn?: number | null;
+  finishedOn?: number | null;
+};
+
+export async function getEnrichMatchEventsJob(id: string): Promise<EnrichMatchEventsJobStatus | null> {
+  const queue = getQueue<EnrichMatchEventsJobData>(QUEUE_NAMES.enrichMatchEvents);
+  const job = (await queue.getJob(id)) as
+    | Job<EnrichMatchEventsJobData, EnrichMatchEventsResult>
+    | undefined;
+  if (!job) return null;
+  const state = await job.getState().catch(() => 'unknown');
+  return {
+    id: job.id ?? id,
+    state: state as EnrichMatchEventsJobStatus['state'],
+    progress: job.progress ?? null,
+    result: (job.returnvalue as EnrichMatchEventsResult | null | undefined) ?? null,
+    failedReason: job.failedReason ?? null,
+    createdAt: job.timestamp ?? null,
+    processedOn: job.processedOn ?? null,
+    finishedOn: job.finishedOn ?? null,
+  };
+}
+
 /**
  * Register (or replace) BullMQ repeatable jobs for scheduled ingest + push
  * scheduling. Idempotent — call once at server boot. Uses `jobId` so repeats
@@ -185,6 +233,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
   const preEventQueue = getQueue<SchedulePreEventJobData>(QUEUE_NAMES.preEvent);
   const discoveryQueue = getQueue<ScheduleDiscoveryJobData>(QUEUE_NAMES.discovery);
   const receiptsQueue = getQueue<CheckPushReceiptsJobData>(QUEUE_NAMES.pushReceipts);
+  const enrichMatchEventsQueue = getQueue<EnrichMatchEventsJobData>(QUEUE_NAMES.enrichMatchEvents);
 
   // Cadences (ms):
   const CRON = {
@@ -199,16 +248,26 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     // window regardless of when the worker deploys.
     discovery: 90 * 60_000,     // 90m
     pushReceipts: 5 * 60_000,   // 5m — Expo receipts are only meaningful >15m after send
+    enrichMatchEvents: 30 * 60_000, // 30m — post-match goals/cards/subs
   };
 
   const specs: Array<{ q: Queue; name: string; data: unknown; every: number }> = [
     { q: ingestQueue as unknown as Queue, name: 'ingest:f1', data: { sport: 'f1' }, every: CRON.f1 },
     { q: ingestQueue as unknown as Queue, name: 'ingest:football', data: { sport: 'football' }, every: CRON.football },
+    // UCL official calendar — same cadence as football; cheap (1–3 UEFA pages).
+    // Important in the 48h after the league-phase draw when kickoffs land.
+    { q: ingestQueue as unknown as Queue, name: 'ingest:ucl', data: { sport: 'ucl' }, every: CRON.football },
     { q: ingestQueue as unknown as Queue, name: 'ingest:cricket', data: { sport: 'cricket' }, every: CRON.cricket },
     { q: ingestQueue as unknown as Queue, name: 'ingest:tennis', data: { sport: 'tennis' }, every: CRON.tennis },
     { q: preEventQueue as unknown as Queue, name: 'schedule-pre-event', data: {}, every: CRON.preEvent },
     { q: discoveryQueue as unknown as Queue, name: 'schedule-discovery', data: {}, every: CRON.discovery },
     { q: receiptsQueue as unknown as Queue, name: 'check-push-receipts', data: {}, every: CRON.pushReceipts },
+    {
+      q: enrichMatchEventsQueue as unknown as Queue,
+      name: 'enrich-match-events',
+      data: {},
+      every: CRON.enrichMatchEvents,
+    },
   ];
 
   for (const s of specs) {
@@ -237,6 +296,17 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     });
   }
 
+  await enrichMatchEventsQueue.add(
+    'enrich-match-events:boot',
+    {} as never,
+    {
+      jobId: `boot:enrich-match-events:${bootId}`,
+      removeOnComplete: 10,
+      removeOnFail: 10,
+      delay: 20_000,
+    },
+  );
+
   return summary;
 }
 
@@ -249,6 +319,7 @@ export async function unregisterRepeatableJobs(): Promise<void> {
     getQueue(QUEUE_NAMES.preEvent),
     getQueue(QUEUE_NAMES.discovery),
     getQueue(QUEUE_NAMES.pushReceipts),
+    getQueue(QUEUE_NAMES.enrichMatchEvents),
   ];
   for (const q of queues) {
     const repeats = await q.getRepeatableJobs();

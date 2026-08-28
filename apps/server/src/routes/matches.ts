@@ -6,25 +6,36 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@kairo/db';
 
-function serializeMatch(m: {
-  id: string;
-  sportId: string;
-  competitionId: string;
-  homeTeamId: string | null;
-  awayTeamId: string | null;
-  startsAt: Date;
-  status: string;
-  homeScore: number | null;
-  awayScore: number | null;
-  venue: string | null;
-  round: string | null;
-  metadata: unknown;
-  providerRefs: unknown;
-  lastSyncedAt: Date;
-  competition?: { id: string; name: string; country: string | null; logoUrl: string | null; season: string | null } | null;
-  homeTeam?: { id: string; name: string; shortName: string | null; logoUrl: string | null } | null;
-  awayTeam?: { id: string; name: string; shortName: string | null; logoUrl: string | null } | null;
-}) {
+function serializeMatch(
+  m: {
+    id: string;
+    sportId: string;
+    competitionId: string;
+    homeTeamId: string | null;
+    awayTeamId: string | null;
+    startsAt: Date;
+    status: string;
+    homeScore: number | null;
+    awayScore: number | null;
+    venue: string | null;
+    round: string | null;
+    metadata: unknown;
+    providerRefs: unknown;
+    lastSyncedAt: Date;
+    competition?: { id: string; name: string; country: string | null; logoUrl: string | null; season: string | null } | null;
+    homeTeam?: { id: string; name: string; shortName: string | null; logoUrl: string | null } | null;
+    awayTeam?: { id: string; name: string; shortName: string | null; logoUrl: string | null } | null;
+    matchEvents?: Array<{
+      id: string;
+      minute: number | null;
+      type: string;
+      team: string | null;
+      playerName: string | null;
+      detail: string | null;
+    }>;
+  },
+  opts?: { includeEvents?: boolean },
+) {
   const refs = Array.isArray(m.providerRefs) ? m.providerRefs : [];
   const primary = refs[0] as { provider?: string; externalId?: string } | undefined;
   return {
@@ -67,6 +78,21 @@ function serializeMatch(m: {
       primaryProvider: primary?.provider ?? null,
       lastSyncedAt: m.lastSyncedAt.toISOString(),
     },
+    ...(opts?.includeEvents
+      ? {
+          events: (m.matchEvents ?? [])
+            .slice()
+            .sort((a, b) => (a.minute ?? 0) - (b.minute ?? 0))
+            .map((e) => ({
+              id: e.id,
+              minute: e.minute,
+              type: e.type,
+              team: e.team,
+              playerName: e.playerName,
+              detail: e.detail,
+            })),
+        }
+      : {}),
   };
 }
 
@@ -243,7 +269,7 @@ export async function registerMatchRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['matches'],
-        summary: 'Match detail with provenance',
+        summary: 'Match detail with provenance and (when ingested) key match events',
         params: {
           type: 'object',
           required: ['id'],
@@ -255,10 +281,15 @@ export async function registerMatchRoutes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       const match = await prisma.match.findUnique({
         where: { id },
-        include: matchInclude,
+        include: {
+          ...matchInclude,
+          matchEvents: {
+            orderBy: [{ minute: 'asc' }, { createdAt: 'asc' }],
+          },
+        },
       });
       if (!match) return reply.code(404).send({ error: 'not_found' });
-      return { source: 'db', match: serializeMatch(match) };
+      return { source: 'db', match: serializeMatch(match, { includeEvents: true }) };
     },
   );
 }

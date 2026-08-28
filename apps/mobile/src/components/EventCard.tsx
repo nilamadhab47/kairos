@@ -193,7 +193,7 @@ function GenericBody({ title, hero }: { title: string; hero: boolean }) {
 
 function mapStatus(s: string): MatchState {
   if (s === 'live') return 'live';
-  if (s === 'ft' || s === 'finished' || s === 'complete') return 'ft';
+  if (s === 'ft' || s === 'finished' || s === 'complete' || s === 'completed') return 'ft';
   if (s === 'postponed') return 'postponed';
   if (s === 'cancelled') return 'cancelled';
   return 'upcoming';

@@ -13,4 +13,13 @@ export type {
 } from './thesportsdb.js';
 export { OpenF1Provider } from './openf1.js';
 export { APIFootballProvider } from './api-football.js';
-export { ESPNProvider, ESPN_LEAGUES, ESPN_REMINDER_SOCCER_LEAGUES, espnDateString } from './espn.js';
+export { ESPNProvider, ESPN_LEAGUES, ESPN_REMINDER_SOCCER_LEAGUES, espnDateString, parseEspnSoccerSummary } from './espn.js';
+export {
+  UEFAProvider,
+  UEFA_COMPETITIONS,
+  canonicalUefaTeamName,
+  uefaSeasonYear,
+  uefaSeasonLabel,
+  parseUefaPlayerEvents,
+} from './uefa.js';
+export type { UefaCompetitionKey, UefaFetchResult } from './uefa.js';

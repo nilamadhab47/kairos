@@ -8,6 +8,7 @@ import { QUEUE_NAMES } from './queues.js';
 import { processTestJob } from './jobs/test.js';
 import { ingestOpenF1Sessions } from './jobs/ingest-f1.js';
 import { ingestFootballFixtures } from './jobs/ingest-football.js';
+import { ingestUclCalendar } from './jobs/ingest-ucl.js';
 import { ingestCricketMatches } from './jobs/ingest-cricket.js';
 import { ingestTennisMatches } from './jobs/ingest-tennis.js';
 import { processDeliverPushJob } from './jobs/deliver-push.js';
@@ -15,13 +16,14 @@ import { processCheckPushReceiptsJob } from './jobs/check-push-receipts.js';
 import { processSchedulePreEventJob } from './jobs/schedule-pre-event.js';
 import { processScheduleDiscoveryJob } from './jobs/schedule-discovery.js';
 import { enrichLogosFromTheSportsDb, type EnrichLogosJobData } from './jobs/enrich-logos.js';
+import { enrichMatchEvents, type EnrichMatchEventsJobData } from './jobs/enrich-match-events.js';
 import { initSportsProviders } from '@kairo/sports';
 import type {
   DeliverPushJobData,
   IngestSportJobData,
   SchedulePreEventJobData,
 } from './producer.js';
-import { enqueueSchedulePreEvent } from './producer.js';
+import { enqueueSchedulePreEvent, enqueueEnrichMatchEvents } from './producer.js';
 
 loadDotenv({ path: resolve(process.cwd(), '../../.env') });
 loadDotenv({ path: resolve(process.cwd(), '.env') });
@@ -45,7 +47,7 @@ workers.push(
 function sportFromIngestJob(job: Job<IngestSportJobData>): IngestSportJobData['sport'] | undefined {
   if (job.data?.sport) return job.data.sport;
   // Repeatable jobs sometimes land with empty data; name is `ingest:f1` etc.
-  const fromName = /^ingest:(f1|football|cricket|tennis)$/.exec(job.name)?.[1];
+  const fromName = /^ingest:(f1|football|cricket|tennis|ucl)$/.exec(job.name)?.[1];
   return fromName as IngestSportJobData['sport'] | undefined;
 }
 
@@ -64,6 +66,9 @@ workers.push(
             season: job.data?.season,
             leagueIds: job.data?.leagueIds,
           });
+          break;
+        case 'ucl':
+          result = await ingestUclCalendar({ seasonYear: job.data?.uclSeasonYear });
           break;
         case 'cricket':
           result = await ingestCricketMatches({
@@ -85,6 +90,16 @@ workers.push(
         await enqueueSchedulePreEvent({}, { jobId: `post-ingest-pre-event:${job.id ?? Date.now()}` });
       } catch {
         // Non-fatal — repeatable pre-event job remains the safety net.
+      }
+      if (sport === 'football' || sport === 'ucl') {
+        try {
+          await enqueueEnrichMatchEvents(
+            {},
+            { jobId: `post-ingest-enrich-events:${sport}:${job.id ?? Date.now()}` },
+          );
+        } catch {
+          // Non-fatal — repeatable enrich job remains the safety net.
+        }
       }
       return result;
     },
@@ -137,6 +152,19 @@ workers.push(
       connection,
       concurrency: 1,
       lockDuration: 10 * 60_000,
+      stalledInterval: 60_000,
+    },
+  ),
+);
+
+workers.push(
+  new Worker(
+    QUEUE_NAMES.enrichMatchEvents,
+    async (job: Job<EnrichMatchEventsJobData>) => enrichMatchEvents(job.data ?? {}),
+    {
+      connection,
+      concurrency: 1,
+      lockDuration: 8 * 60_000,
       stalledInterval: 60_000,
     },
   ),

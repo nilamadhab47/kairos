@@ -3,7 +3,7 @@ export * from './provider.js';
 export * from './router.js';
 export * from './providers/index.js';
 export { ProviderError, setRateLimit, providerFetchJson } from './http.js';
-export { upsertMatch, upsertMatches, upsertStandings, findCompetitionIdByProvider } from './ingest.js';
+export { upsertMatch, upsertMatches, upsertStandings, findCompetitionIdByProvider, replaceMatchEvents } from './ingest.js';
 export type { UpsertMatchResult, UpsertBatchResult } from './ingest.js';
 
 import { sportsRouter } from './router.js';

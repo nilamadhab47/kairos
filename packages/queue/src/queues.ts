@@ -9,6 +9,7 @@ export const QUEUE_NAMES = {
   pushReceipts: 'kairo-push-receipts',
   ingestSports: 'kairo-ingest-sports',
   enrichLogos: 'kairo-enrich-logos',
+  enrichMatchEvents: 'kairo-enrich-match-events',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
