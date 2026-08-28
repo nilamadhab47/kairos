@@ -156,7 +156,7 @@ export async function registerMatchRoutes(app: FastifyInstance): Promise<void> {
         from: now.toISOString(),
         until: until.toISOString(),
         count: matches.length,
-        matches: matches.map(serializeMatch),
+        matches: matches.map((m) => serializeMatch(m)),
       };
     },
   );
@@ -230,7 +230,7 @@ export async function registerMatchRoutes(app: FastifyInstance): Promise<void> {
       return {
         source: 'db',
         count: matches.length,
-        matches: matches.map(serializeMatch),
+        matches: matches.map((m) => serializeMatch(m)),
       };
     },
   );
@@ -260,7 +260,7 @@ export async function registerMatchRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { startsAt: 'asc' },
         take: 100,
       });
-      return { source: 'db', count: matches.length, matches: matches.map(serializeMatch) };
+      return { source: 'db', count: matches.length, matches: matches.map((m) => serializeMatch(m)) };
     },
   );
 

@@ -287,7 +287,7 @@ function toMatch(
       away: Number.isFinite(awayScore) ? awayScore : null,
     },
     venue,
-    round: roundLabel(raw),
+    round: roundLabel(raw) ?? undefined,
     metadata: {
       season: seasonLabel,
       seasonYear: raw.seasonYear != null ? String(raw.seasonYear) : seasonLabel,
