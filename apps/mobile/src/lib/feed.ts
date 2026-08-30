@@ -53,6 +53,7 @@ export function matchToEvent(m: FeedMatch): TodayEvent {
     startsAt: m.startsAt,
     status: m.status,
     metadata: {
+      matchId: m.id,
       homeTeam: m.homeTeam
         ? { name: m.homeTeam.name, logoUrl: m.homeTeam.logoUrl ?? null }
         : undefined,

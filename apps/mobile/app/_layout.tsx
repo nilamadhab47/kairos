@@ -5,7 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { EventDetailProvider } from '@/components';
+import { EventDetailProvider, ErrorBoundary } from '@/components';
 import { queryClient } from '@/lib/query';
 
 // Foreground handler — without this, iOS/Android suppress the banner while
@@ -32,10 +32,12 @@ export default function RootLayout() {
           {/* Must wrap the root Stack — /team/[id] is a sibling of (tabs),
               not a child of the tab navigator. Putting the provider only
               on (tabs) crashed the app when a home-page crest was tapped. */}
-          <EventDetailProvider>
-            <StatusBar style="light" />
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0E14' } }} />
-          </EventDetailProvider>
+          <ErrorBoundary>
+            <EventDetailProvider>
+              <StatusBar style="light" />
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0E14' } }} />
+            </EventDetailProvider>
+          </ErrorBoundary>
         </BottomSheetModalProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>

@@ -5,6 +5,7 @@ import { StatusPill, type MatchState } from './StatusPill';
 import { TeamCrest } from './TeamCrest';
 import { formatLocalTime } from '@/lib/time';
 import { radii, spacing, useTheme, type SportKey } from '@/design';
+import { effectiveMatchStatus } from '@kairo/core';
 
 export type TodayEvent = {
   id: string;
@@ -34,7 +35,7 @@ export function EventCard({ event, variant = 'default', timezone, onPress }: Pro
   const theme = useTheme();
   const sportKey = event.category as SportKey;
   const accent = theme.sport[sportKey] ?? theme.color.accent;
-  const state = mapStatus(event.status);
+  const state = mapStatus(event.status, event.startsAt, event.category);
   const time = formatLocalTime(event.startsAt, timezone);
   const meta = (event.metadata ?? {}) as Record<string, any>;
   const isMatch =
@@ -54,7 +55,7 @@ export function EventCard({ event, variant = 'default', timezone, onPress }: Pro
         <View style={styles.topRow}>
           <View style={styles.chip}>
             <View style={[styles.chipDot, { backgroundColor: accent }]} />
-            <Text style={[styles.chipText, { color: theme.color.textMuted }]}>
+            <Text style={[styles.chipText, { color: theme.color.textMuted }]} numberOfLines={1}>
               {sportLabel(event.category)}
               {event.subtitle ? `  ·  ${event.subtitle}` : ''}
             </Text>
@@ -191,11 +192,12 @@ function GenericBody({ title, hero }: { title: string; hero: boolean }) {
   );
 }
 
-function mapStatus(s: string): MatchState {
-  if (s === 'live') return 'live';
-  if (s === 'ft' || s === 'finished' || s === 'complete' || s === 'completed') return 'ft';
-  if (s === 'postponed') return 'postponed';
-  if (s === 'cancelled') return 'cancelled';
+function mapStatus(s: string, startsAt?: string, sportId?: string): MatchState {
+  const effective = effectiveMatchStatus(s, startsAt ?? Date.now(), sportId);
+  if (effective === 'live') return 'live';
+  if (effective === 'completed') return 'ft';
+  if (effective === 'postponed') return 'postponed';
+  if (effective === 'cancelled') return 'cancelled';
   return 'upcoming';
 }
 
@@ -226,7 +228,7 @@ function withAlpha(hex: string, a: number): string {
 const styles = StyleSheet.create({
   accentStripe: { width: '100%', borderTopLeftRadius: radii.card, borderTopRightRadius: radii.card },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing[3] },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 },
   chipDot: { width: 6, height: 6, borderRadius: 999 },
   chipText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.1 },
   matchWrap: { flexDirection: 'row', alignItems: 'center' },

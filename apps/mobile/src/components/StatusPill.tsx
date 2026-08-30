@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -34,6 +35,7 @@ export function StatusPill({ state, label }: Props) {
       -1,
       false,
     );
+    return () => cancelAnimation(pulse);
   }, [state, reduce, pulse]);
 
   const dotStyle = useAnimatedStyle(() => ({

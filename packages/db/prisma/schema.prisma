@@ -552,6 +552,24 @@ model StandingRow {
   @@map("standing_rows")
 }
 
+/// Capped, deduped process errors. One row per fingerprint. Max ~100 rows.
+/// Replaces a hosted error product for early production.
+model AppError {
+  id          String   @id @default(cuid())
+  fingerprint String   @unique @db.VarChar(32)
+  source      String   @db.VarChar(20) // api | worker | mobile
+  name        String   @db.VarChar(80)
+  message     String   @db.VarChar(400)
+  stack       String?  @db.VarChar(1200)
+  path        String?  @db.VarChar(180)
+  count       Int      @default(1)
+  firstSeenAt DateTime @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+
+  @@index([lastSeenAt], name: "idx_app_errors_last_seen")
+  @@map("app_errors")
+}
+
 model Asset {
   id         String   @id @default(cuid())
   entityType String   @map("entity_type") @db.VarChar(30) // team, competition, player, sport

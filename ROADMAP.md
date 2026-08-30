@@ -74,14 +74,28 @@ Last updated: 2026-08-07
 - Notification prefs UI
 - Alerts history
 - Light polish (NOW rail, haptics) — formerly issues #17–#19
-- Sentry
+- In-app error log (Postgres, capped + deduped) — not Sentry
+
+## Google Calendar (build next — in-app calendar, not just store listing)
+
+**Goal:** The in-app Calendar tab should feel like Google Calendar for *your* sports: month/week, kickoff as timed events, add-to-device-calendar, later sync to a real Google Calendar.
+
+User.googleToken and ConnectedSource already exist in Prisma for this. Do not scrape calendars.
+
+| Order | Work |
+|---|---|
+| 1 | Device calendar (Expo Calendar) — one event per followed fixture, timezone-aware, user opt-in in Settings |
+| 2 | ICS export of `/api/me/week` for people who subscribe from Google/Apple Calendar |
+| 3 | Google Calendar OAuth (`ConnectedSource.sourceType = google_calendar`, encrypt tokens in `User.googleToken`) — create/update/delete the same fixtures on a dedicated "Kairos" calendar |
+| 4 | Two-way: show the user's own Google events on the Kairos calendar only if they opt in (busy/free, no email contents) |
+
+Keep WhatsApp / Claude copy / Telegram in this milestone still deferred.
 
 ## Milestone M4 — Channels & intelligence (defer)
 
 - WhatsApp / Twilio
 - Claude AI copy + cache
-- Google Calendar OAuth (encrypted tokens)
-- Habits, cricket, YouTube, Telegram
+- Habits, YouTube, Telegram
 
 ---
 

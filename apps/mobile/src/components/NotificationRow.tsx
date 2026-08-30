@@ -31,6 +31,7 @@ export type NotificationItem = {
     subtitle: string | null;
     startsAt: string;
     status: string;
+    matchId?: string | null;
   } | null;
 };
 

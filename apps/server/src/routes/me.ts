@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, prisma } from '@kairo/db';
 import { personalizedMatchWhere } from '../lib/subscriptions.js';
+import { effectiveMatchStatus } from '@kairo/core';
+import { liveFeedWhere } from '../lib/match-live.js';
 import {
   parseTimeToDate,
   formatTimeFromDate,
@@ -74,6 +76,7 @@ function serializeFeedMatch(m: {
 }) {
   const refs = Array.isArray(m.providerRefs) ? m.providerRefs : [];
   const primary = refs[0] as { provider?: string } | undefined;
+  const status = effectiveMatchStatus(m.status, m.startsAt, m.sportId);
   return {
     id: m.id,
     sportId: m.sportId,
@@ -85,8 +88,8 @@ function serializeFeedMatch(m: {
     homeTeam: m.homeTeam,
     awayTeam: m.awayTeam,
     startsAt: m.startsAt.toISOString(),
-    status: m.status,
-    score: safeScore(m.status, m.homeScore, m.awayScore),
+    status,
+    score: safeScore(status, m.homeScore, m.awayScore),
     venue: m.venue,
     round: m.round,
     provenance: {
@@ -169,10 +172,10 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
           take: 200,
         }),
         prisma.match.findMany({
-          where: { AND: [subFilter, { status: 'live' }] },
+          where: { AND: [subFilter, liveFeedWhere(now)] },
           include: feedMatchInclude,
           orderBy: { startsAt: 'asc' },
-          take: 30,
+          take: 8,
         }),
         prisma.match.findMany({
           where: {
@@ -326,11 +329,11 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
 
       const live = await prisma.match.findMany({
         where: {
-          AND: [subFilter, { status: 'live' }],
+          AND: [subFilter, liveFeedWhere()],
         },
         include: feedMatchInclude,
         orderBy: { startsAt: 'asc' },
-        take: 50,
+        take: 8,
       });
 
       const today = matches.filter((m) => m.startsAt >= todayStart && m.startsAt < todayEnd);

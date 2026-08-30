@@ -14,6 +14,7 @@ export { KairosWordmark } from './KairosWordmark';
 export { NotificationRow, type NotificationItem } from './NotificationRow';
 export { PickerRow } from './PickerRow';
 export { ErrorState } from './ErrorState';
+export { ErrorBoundary } from './ErrorBoundary';
 export { PushRegistrar } from './PushRegistrar';
 export { Screen } from './Screen';
 export { SectionHeader } from './SectionHeader';

@@ -1,6 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@kairo/db';
+import { effectiveMatchStatus } from '@kairo/core';
 import { enqueueDeliverPush } from '@kairo/queue';
+
+function matchIdFromMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const id = (metadata as { matchId?: unknown }).matchId;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
 
 export async function registerNotificationRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -39,6 +46,7 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
               subtitle: true,
               startsAt: true,
               status: true,
+              metadata: true,
             },
           },
         },
@@ -75,7 +83,8 @@ export async function registerNotificationRoutes(app: FastifyInstance): Promise<
                 title: n.event.title,
                 subtitle: n.event.subtitle,
                 startsAt: n.event.startsAt.toISOString(),
-                status: n.event.status,
+                status: effectiveMatchStatus(n.event.status, n.event.startsAt, n.event.category),
+                matchId: matchIdFromMetadata(n.event.metadata),
               }
             : null,
         })),

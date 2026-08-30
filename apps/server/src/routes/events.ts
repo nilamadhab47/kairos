@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@kairo/db';
+import { effectiveMatchStatus } from '@kairo/core';
 import { eventMatchesSubs } from '../lib/subscriptions.js';
 import { zonedDayBounds, zonedWeekBounds } from '../lib/time.js';
 
@@ -28,7 +29,7 @@ function serializeEvent(
     subtitle: event.subtitle,
     startsAt: event.startsAt.toISOString(),
     endsAt: event.endsAt?.toISOString() ?? null,
-    status: event.status,
+    status: effectiveMatchStatus(event.status, event.startsAt, event.category),
     metadata: event.metadata,
     contextTags: event.contextTags,
     isDismissed: userEvent?.isDismissed ?? false,
@@ -168,9 +169,15 @@ export async function registerEventRoutes(app: FastifyInstance): Promise<void> {
       const categories = [...new Set(user.subscriptions.map((s) => s.category))];
       if (categories.length === 0) return { events: [] };
 
+      const now = new Date();
       const events = await prisma.event.findMany({
-        where: { category: { in: categories }, status: 'live' },
+        where: {
+          category: { in: categories },
+          status: { notIn: ['cancelled', 'canceled', 'postponed', 'completed', 'complete', 'ft', 'finished'] },
+          startsAt: { gte: new Date(now.getTime() - 5 * 24 * 60 * 60_000), lte: now },
+        },
         orderBy: { startsAt: 'asc' },
+        take: 20,
       });
       return {
         events: events

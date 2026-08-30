@@ -6,6 +6,7 @@ import authPlugin from './plugins/auth.js';
 import { registerOpenApi } from './plugins/openapi.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes, registerTestQueueRoutes } from './routes/health.js';
+import { registerErrorRoutes } from './routes/errors.js';
 import { registerMeRoutes } from './routes/me.js';
 import { registerSubscriptionRoutes } from './routes/subscriptions.js';
 import { registerEventRoutes } from './routes/events.js';
@@ -18,6 +19,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerFeedbackRoutes } from './routes/feedback.js';
 import { initSportsProviders } from '@kairo/sports';
 import { registerRepeatableJobs } from '@kairo/queue';
+import { recordAppError } from '@kairo/db';
 
 export async function buildServer(): Promise<FastifyInstance> {
   initSportsProviders();
@@ -63,6 +65,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(authPlugin);
 
   await registerHealthRoutes(app);
+  await registerErrorRoutes(app);
   await registerAuthRoutes(app);
   await registerMeRoutes(app);
   await registerSubscriptionRoutes(app);
@@ -75,6 +78,24 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerAdminRoutes(app);
   await registerFeedbackRoutes(app);
   await registerTestQueueRoutes(app);
+
+  app.setErrorHandler((err, req, reply) => {
+    const e = err as Error & { statusCode?: number };
+    const status = e.statusCode ?? 500;
+    if (status >= 500) {
+      void recordAppError({
+        source: 'api',
+        name: e.name,
+        message: e.message,
+        stack: e.stack,
+        path: `${req.method} ${req.url}`,
+      });
+    }
+    const expose = status < 500 || env.NODE_ENV !== 'production';
+    reply.code(status).send({
+      error: expose ? e.message : 'internal_error',
+    });
+  });
 
   app.get(
     '/api',

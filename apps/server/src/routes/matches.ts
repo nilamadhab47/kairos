@@ -5,6 +5,8 @@
 
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@kairo/db';
+import { effectiveMatchStatus } from '@kairo/core';
+import { liveFeedWhere } from '../lib/match-live.js';
 
 function serializeMatch(
   m: {
@@ -68,7 +70,7 @@ function serializeMatch(
         }
       : null,
     startsAt: m.startsAt.toISOString(),
-    status: m.status,
+    status: effectiveMatchStatus(m.status, m.startsAt, m.sportId),
     score: { home: m.homeScore, away: m.awayScore },
     venue: m.venue,
     round: m.round,
@@ -253,7 +255,7 @@ export async function registerMatchRoutes(app: FastifyInstance): Promise<void> {
       const { sport } = req.query as { sport?: string };
       const matches = await prisma.match.findMany({
         where: {
-          status: 'live',
+          ...liveFeedWhere(),
           ...(sport ? { sportId: sport } : {}),
         },
         include: matchInclude,

@@ -94,13 +94,13 @@ export default function AlertsScreen() {
     (n: NotificationItem) => {
       if (!n.event) return;
       const ev: TodayEvent = {
-        id: n.event.id,
+        id: n.event.matchId ?? n.event.id,
         category: n.event.category,
         title: n.event.title,
         subtitle: n.event.subtitle,
         startsAt: n.event.startsAt,
         status: n.event.status,
-        metadata: null,
+        metadata: n.event.matchId ? { matchId: n.event.matchId } : null,
       };
       openEvent(ev);
     },

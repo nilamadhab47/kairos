@@ -18,6 +18,7 @@ import { processScheduleDiscoveryJob } from './jobs/schedule-discovery.js';
 import { enrichLogosFromTheSportsDb, type EnrichLogosJobData } from './jobs/enrich-logos.js';
 import { enrichMatchEvents, type EnrichMatchEventsJobData } from './jobs/enrich-match-events.js';
 import { initSportsProviders } from '@kairo/sports';
+import { recordAppError } from '@kairo/db';
 import type {
   DeliverPushJobData,
   IngestSportJobData,
@@ -178,6 +179,13 @@ for (const w of workers) {
   w.on('failed', (job, err) => {
     // eslint-disable-next-line no-console
     console.error(`[worker:${w.name}] job ${job?.id ?? '?'} failed:`, err.message);
+    void recordAppError({
+      source: 'worker',
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+      path: `queue:${w.name}:${job?.name ?? 'unknown'}`,
+    });
   });
   w.on('completed', (job) => {
     // eslint-disable-next-line no-console

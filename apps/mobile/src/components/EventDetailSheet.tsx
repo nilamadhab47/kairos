@@ -22,6 +22,7 @@ import type { TodayEvent } from './EventCard';
 import { elevation, haptics, radii, spacing, useTheme, type SportKey } from '@/design';
 import { api } from '@/lib/api';
 import { formatLocalTime } from '@/lib/time';
+import { effectiveMatchStatus } from '@kairo/core';
 
 type Openable = TodayEvent & { isStarred?: boolean };
 
@@ -146,18 +147,28 @@ function SheetBody({
   const theme = useTheme();
   const sportKey = event.category as SportKey;
   const accent = theme.sport[sportKey] ?? theme.color.accent;
-  const state = mapStatus(event.status);
+  const state = mapStatus(event.status, event.startsAt, event.category);
   const meta = (event.metadata ?? {}) as Record<string, any>;
   const isMatch = Boolean(meta.homeTeam?.name && meta.awayTeam?.name && event.category !== 'f1');
   const time = formatLocalTime(event.startsAt, timezone);
-  const dateLabel = new Date(event.startsAt).toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-    timeZone: timezone,
-  });
-  const matchId = typeof meta.matchId === 'string' ? meta.matchId : event.id;
-  const showMoments = isMatch && (state === 'ft' || state === 'live');
+  let dateLabel = '';
+  try {
+    dateLabel = new Date(event.startsAt).toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      timeZone: timezone,
+    });
+  } catch {
+    dateLabel = event.startsAt;
+  }
+  const matchId =
+    typeof meta.matchId === 'string' && meta.matchId.length > 0
+      ? meta.matchId
+      : isMatch
+        ? event.id
+        : null;
+  const showMoments = Boolean(matchId) && isMatch && (state === 'ft' || state === 'live');
   const detail = useQuery({
     queryKey: ['match-detail', matchId],
     queryFn: () =>
@@ -169,6 +180,7 @@ function SheetBody({
       }>(`/api/matches/${matchId}`),
     enabled: showMoments,
     retry: false,
+    refetchInterval: state === 'live' ? 60_000 : false,
   });
   const score = detail.data?.match.score ?? meta.score;
   const moments = (detail.data?.match.events ?? []).filter((e) =>
@@ -379,11 +391,12 @@ function momentFallback(type: string): string {
   }
 }
 
-function mapStatus(s: string): MatchState {
-  if (s === 'live') return 'live';
-  if (s === 'ft' || s === 'finished' || s === 'complete' || s === 'completed') return 'ft';
-  if (s === 'postponed') return 'postponed';
-  if (s === 'cancelled') return 'cancelled';
+function mapStatus(s: string, startsAt?: string, sportId?: string): MatchState {
+  const effective = effectiveMatchStatus(s, startsAt ?? Date.now(), sportId);
+  if (effective === 'live') return 'live';
+  if (effective === 'completed') return 'ft';
+  if (effective === 'postponed') return 'postponed';
+  if (effective === 'cancelled') return 'cancelled';
   return 'upcoming';
 }
 

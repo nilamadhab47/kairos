@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown, FadeInUp, Layout } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import {
@@ -161,7 +161,6 @@ export default function TodayScreen() {
                   <Animated.View
                     key={m.id}
                     entering={FadeInUp.delay(50 * i).duration(260)}
-                    layout={Layout.springify()}
                   >
                     <EventCard
                       event={matchToEvent(m)}
@@ -184,7 +183,6 @@ export default function TodayScreen() {
                     <Animated.View
                       key={m.id}
                       entering={FadeInUp.delay(60 * i).duration(280)}
-                      layout={Layout.springify()}
                     >
                       <EventCard
                         event={matchToEvent(m)}
@@ -216,7 +214,6 @@ export default function TodayScreen() {
                     <Animated.View
                       key={m.id}
                       entering={FadeInUp.delay(50 * i).duration(260)}
-                      layout={Layout.springify()}
                     >
                       <EventCard
                         event={matchToEvent(m)}
@@ -253,7 +250,6 @@ export default function TodayScreen() {
                           <Animated.View
                             key={m.id}
                             entering={FadeInUp.delay(40 * i + gi * 30).duration(240)}
-                            layout={Layout.springify()}
                           >
                             <EventCard
                               event={matchToEvent(m)}

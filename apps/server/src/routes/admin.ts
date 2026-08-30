@@ -1294,6 +1294,31 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.post(
+    '/api/admin/users/wipe',
+    {
+      preHandler: backfillGuard,
+      schema: {
+        tags: ['admin'],
+        summary: 'Delete every user and cascaded prefs/sessions/follows (matches kept)',
+        body: {
+          type: 'object',
+          required: ['confirm'],
+          properties: { confirm: { type: 'string' } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { confirm } = (req.body ?? {}) as { confirm?: string };
+      if (confirm !== 'wipe-all-users') {
+        return reply.code(400).send({ error: 'confirm_wipe-all-users' });
+      }
+      const before = await prisma.user.count();
+      await prisma.user.deleteMany();
+      return { ok: true, deletedUsers: before };
+    },
+  );
+
+  app.post(
     '/api/admin/scheduler/enable',
     {
       preHandler: guard,
