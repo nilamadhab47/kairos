@@ -16,6 +16,7 @@
  */
 
 import { prisma } from '@kairo/db';
+import { Prisma } from '@prisma/client';
 import {
   formatCompetitionDisplay,
   inferTeamType,
@@ -687,23 +688,33 @@ export async function upsertStandings(
     }
 
     if (!team) continue;
-    await prisma.standingRow.create({
-      data: {
-        standingId: standing.id,
-        teamId: team.id,
-        position: row.position,
-        played: row.played,
-        won: row.won,
-        drawn: row.drawn,
-        lost: row.lost,
-        goalsFor: row.goalsFor,
-        goalsAgainst: row.goalsAgainst,
-        goalDifference: row.goalDifference,
-        points: row.points,
-        form: row.form ?? null,
-      },
-    });
-    inserted += 1;
+    // Skip duplicate (standing_id + team_id) rows silently — this happens
+    // when the canonicalizer collapses two feed rows onto the same DB team.
+    // The first one wins; the alternate name variant is ignored.
+    try {
+      await prisma.standingRow.create({
+        data: {
+          standingId: standing.id,
+          teamId: team.id,
+          position: row.position,
+          played: row.played,
+          won: row.won,
+          drawn: row.drawn,
+          lost: row.lost,
+          goalsFor: row.goalsFor,
+          goalsAgainst: row.goalsAgainst,
+          goalDifference: row.goalDifference,
+          points: row.points,
+          form: row.form ?? null,
+        },
+      });
+      inserted += 1;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        continue;
+      }
+      throw err;
+    }
   }
   return { rows: inserted };
 }
