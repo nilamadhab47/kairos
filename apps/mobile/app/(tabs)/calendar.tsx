@@ -270,7 +270,7 @@ export default function CalendarScreen() {
               data.empty?.message ??
               (hasFilters
                 ? 'No events from the teams and competitions you follow match this filter.'
-                : "Quiet stretch — you'll be back to something soon.")
+                : 'Finished matches show as FT with the score. Flip months for earlier results, or follow Champions League to see the full UEFA calendar.')
             }
             actionLabel={hasFilters ? 'Clear filters' : undefined}
             onAction={

@@ -5,7 +5,7 @@ import { StatusPill, type MatchState } from './StatusPill';
 import { TeamCrest } from './TeamCrest';
 import { formatLocalTime } from '@/lib/time';
 import { radii, spacing, useTheme, type SportKey } from '@/design';
-import { effectiveMatchStatus } from '@kairo/core';
+import { effectiveMatchStatus } from '@kairo/core/match-status';
 
 export type TodayEvent = {
   id: string;

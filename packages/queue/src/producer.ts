@@ -248,7 +248,7 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     f1: 6 * 60 * 60_000,        // 6h
     football: 6 * 60 * 60_000,  // 6h
     cricket: 30 * 60_000,       // 30m — live-heavy
-    tennis: 12 * 60 * 60_000,   // 12h
+    tennis: 12 * 60 * 60_000,   // 12h — parked (not scheduled until tennis ships)
     preEvent: 30 * 60_000,      // 30m
     // Discovery briefings are gated to users' local 07:00-11:00 window and
     // idempotent per local day, so a fast cadence just means we cover more
@@ -259,6 +259,9 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     enrichMatchEvents: 30 * 60_000, // 30m — post-match goals/cards/subs
   };
 
+  // Drop parked tennis repeatables left from earlier deploys.
+  await ingestQueue.removeRepeatable('ingest:tennis', { every: CRON.tennis }, safeJobId('repeat', 'ingest:tennis')).catch(() => undefined);
+
   const specs: Array<{ q: Queue; name: string; data: unknown; every: number }> = [
     { q: ingestQueue as unknown as Queue, name: 'ingest:f1', data: { sport: 'f1' }, every: CRON.f1 },
     { q: ingestQueue as unknown as Queue, name: 'ingest:football', data: { sport: 'football' }, every: CRON.football },
@@ -266,7 +269,6 @@ export async function registerRepeatableJobs(): Promise<Array<{ queue: string; n
     // Important in the 48h after the league-phase draw when kickoffs land.
     { q: ingestQueue as unknown as Queue, name: 'ingest:ucl', data: { sport: 'ucl' }, every: CRON.football },
     { q: ingestQueue as unknown as Queue, name: 'ingest:cricket', data: { sport: 'cricket' }, every: CRON.cricket },
-    { q: ingestQueue as unknown as Queue, name: 'ingest:tennis', data: { sport: 'tennis' }, every: CRON.tennis },
     { q: preEventQueue as unknown as Queue, name: 'schedule-pre-event', data: {}, every: CRON.preEvent },
     { q: discoveryQueue as unknown as Queue, name: 'schedule-discovery', data: {}, every: CRON.discovery },
     { q: receiptsQueue as unknown as Queue, name: 'check-push-receipts', data: {}, every: CRON.pushReceipts },

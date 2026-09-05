@@ -128,7 +128,7 @@ export default function CompetitionsOnboarding() {
     queryKey: ['catalog', 'competitions', activeSport],
     queryFn: () =>
       api<CompetitionsResponse>(
-        `/api/catalog/competitions?category=${encodeURIComponent(activeSport)}&limit=60&dedupeBySeason=true`,
+        `/api/catalog/competitions?category=${encodeURIComponent(activeSport)}&limit=200&dedupeBySeason=true`,
       ),
     enabled: Boolean(activeSport) && leagueSports.includes(activeSport),
     staleTime: 60_000,
@@ -198,14 +198,18 @@ export default function CompetitionsOnboarding() {
   const allComps = query.data?.competitions ?? [];
   const comps = useMemo(() => {
     const q = query_.trim().toLowerCase();
-    const pinned = pinSelectedFirst(allComps, activePicks, extrasForActive);
+    const pinned = pinUefaFirst(
+      pinSelectedFirst(allComps, activePicks, extrasForActive),
+      activeSport,
+      activePicks,
+    );
     if (!q) return pinned;
     return pinned.filter((c) => {
       const hay =
         `${c.displayName} ${c.name} ${c.shortName ?? ''} ${c.country ?? ''}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [allComps, query_, activePicks, extrasForActive]);
+  }, [allComps, query_, activePicks, extrasForActive, activeSport]);
 
   const loading =
     query.isLoading || (manage && summary.isLoading && !hydrated.current);
@@ -245,7 +249,7 @@ export default function CompetitionsOnboarding() {
         >
           {manage
             ? 'Saved competitions sit at the top. Toggle any to update.'
-            : 'Pick the competitions that matter. Skip a sport to follow it whole.'}
+            : 'Pick leagues and cups. Champions League is near the top — skip a sport to follow it whole.'}
         </Animated.Text>
 
         {leagueSports.length > 1 ? (
@@ -267,7 +271,7 @@ export default function CompetitionsOnboarding() {
           <SearchInput
             value={query_}
             onChangeText={setQueryText}
-            placeholder={`Search ${SPORT_LABELS[activeSport] ?? activeSport} leagues…`}
+            placeholder={`Search ${SPORT_LABELS[activeSport] ?? activeSport} leagues & cups…`}
           />
         </View>
 
@@ -349,6 +353,35 @@ export default function CompetitionsOnboarding() {
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
+
+function isUefaCup(c: { displayName: string; name: string }): boolean {
+  const hay = `${c.displayName} ${c.name}`.toLowerCase();
+  return (
+    hay.includes('champions league') ||
+    hay.includes('europa league') ||
+    hay.includes('conference league') ||
+    hay.includes('uefa super')
+  );
+}
+
+/** Keep UEFA cups visible above the domestic-league pile, after selected rows. */
+function pinUefaFirst<T extends { id: string; displayName: string; name: string }>(
+  items: T[],
+  sport: string,
+  selectedIds: Set<string> | undefined,
+): T[] {
+  if (sport !== 'football') return items;
+  const selected = selectedIds ?? new Set<string>();
+  const selectedRows: T[] = [];
+  const cups: T[] = [];
+  const rest: T[] = [];
+  for (const item of items) {
+    if (selected.has(item.id)) selectedRows.push(item);
+    else if (isUefaCup(item)) cups.push(item);
+    else rest.push(item);
+  }
+  return [...selectedRows, ...cups, ...rest];
+}
 
 function formatCompSub(c: Competition): string | null {
   const bits = [

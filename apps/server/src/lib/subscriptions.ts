@@ -6,7 +6,7 @@ export {
 } from '@kairo/core';
 
 import { prisma, type Prisma } from '@kairo/db';
-import type { SubRow } from '@kairo/core';
+import { isLaunchSport } from '@kairo/core';
 import { competitionFamilyIds } from './competitions.js';
 
 /**
@@ -32,8 +32,9 @@ const INDIVIDUAL_SPORTS = new Set(['f1']);
  *       for the picked teams, not as an "include everything" flag)
  *     - otherwise include every match in that competition
  *
- *   Teams that don't belong to any followed competition of the same sport:
- *     -> include every match involving that team regardless of competition
+ *   Teams (always):
+ *     -> every match involving that team, in any competition (UCL, cups, …)
+ *        even when the user also followed a domestic league those teams play in.
  *
  * Competition ids are expanded to season/provider "family" clones so a
  * follow of a stale La Liga row still sees fixtures on the live season row.
@@ -56,6 +57,7 @@ export async function personalizedMatchWhere(
     { sportWide: boolean; comps: Set<string>; teams: Set<string> }
   >();
   for (const s of subs) {
+    if (!isLaunchSport(s.category)) continue;
     const bucket = bySport.get(s.category) ?? {
       sportWide: false,
       comps: new Set<string>(),
@@ -115,12 +117,9 @@ export async function personalizedMatchWhere(
         })
       : [];
   const teamsByComp = new Map<string, Set<string>>();
-  const compsByTeam = new Map<string, Set<string>>();
   for (const link of teamCompLinks) {
     if (!teamsByComp.has(link.competitionId)) teamsByComp.set(link.competitionId, new Set());
     teamsByComp.get(link.competitionId)!.add(link.teamId);
-    if (!compsByTeam.has(link.teamId)) compsByTeam.set(link.teamId, new Set());
-    compsByTeam.get(link.teamId)!.add(link.competitionId);
   }
 
   const orClauses: Prisma.MatchWhereInput[] = [];
@@ -150,23 +149,14 @@ export async function personalizedMatchWhere(
       }
     }
 
-    // Teams that aren't covered by any followed comp of this sport —
-    // include every match involving them.
-    const followedFamily = new Set(
-      [...bucket.comps].flatMap((id) => familyBySeed.get(id) ?? [id]),
-    );
-    const unscopedTeams = [...bucket.teams].filter((t) => {
-      const linkedComps = compsByTeam.get(t);
-      if (!linkedComps) return true;
-      for (const c of linkedComps) if (followedFamily.has(c)) return false;
-      return true;
-    });
-    if (unscopedTeams.length > 0) {
+    // Followed clubs: every fixture they play (UCL, cups, etc.), not only
+    // the leagues the user also ticked in onboarding.
+    if (bucket.teams.size > 0) {
       orClauses.push({
         sportId,
         OR: [
-          { homeTeamId: { in: unscopedTeams } },
-          { awayTeamId: { in: unscopedTeams } },
+          { homeTeamId: { in: [...bucket.teams] } },
+          { awayTeamId: { in: [...bucket.teams] } },
         ],
       });
     }

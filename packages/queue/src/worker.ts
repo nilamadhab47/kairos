@@ -10,7 +10,6 @@ import { ingestOpenF1Sessions } from './jobs/ingest-f1.js';
 import { ingestFootballFixtures } from './jobs/ingest-football.js';
 import { ingestUclCalendar } from './jobs/ingest-ucl.js';
 import { ingestCricketMatches } from './jobs/ingest-cricket.js';
-import { ingestTennisMatches } from './jobs/ingest-tennis.js';
 import { processDeliverPushJob } from './jobs/deliver-push.js';
 import { processCheckPushReceiptsJob } from './jobs/check-push-receipts.js';
 import { processSchedulePreEventJob } from './jobs/schedule-pre-event.js';
@@ -77,10 +76,7 @@ workers.push(
           });
           break;
         case 'tennis':
-          result = await ingestTennisMatches({
-            daysAhead: job.data?.tennisDaysAhead ?? 7,
-          });
-          break;
+          return { skipped: true, reason: 'tennis_parked' };
         default:
           throw new Error(
             `unknown sport: ${sport ?? 'undefined'} (job.name=${job.name})`,

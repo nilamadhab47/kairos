@@ -1,5 +1,7 @@
 /** Shared subscription ↔ event/match matching for feeds and push scheduling. */
 
+import { isLaunchSport } from './constants.js';
+
 export type SubRow = {
   category: string;
   entityType: string;
@@ -37,7 +39,9 @@ export function eventMatchesSubs(
   event: { category: string; contextTags: string[] },
   subs: SubRow[],
 ): boolean {
-  const relevant = subs.filter((s) => s.category === event.category);
+  const relevant = subs.filter(
+    (s) => s.category === event.category && isLaunchSport(s.category),
+  );
   if (relevant.length === 0) return false;
 
   const tags = tagsOf(event);
@@ -106,6 +110,7 @@ export function matchWhereFromSubs(
   const teamIds = new Set<string>();
 
   for (const sub of subs) {
+    if (!isLaunchSport(sub.category)) continue;
     if (sub.entityType === 'category' || sub.entityId === sub.category) {
       sportWide.add(sub.category);
       continue;

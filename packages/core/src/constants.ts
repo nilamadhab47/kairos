@@ -1,3 +1,12 @@
+/** Sports we actually ship in onboarding. Tennis (and the rest) stay in the
+ *  taxonomy/ingest code but are hidden until coverage is honest. */
+export const LAUNCH_SPORT_IDS = ['football', 'cricket', 'f1'] as const;
+export type LaunchSportId = (typeof LAUNCH_SPORT_IDS)[number];
+
+export function isLaunchSport(id: string): id is LaunchSportId {
+  return (LAUNCH_SPORT_IDS as readonly string[]).includes(id);
+}
+
 export const EVENT_SOURCES = [
   'football',
   'f1',

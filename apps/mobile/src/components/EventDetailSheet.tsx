@@ -22,7 +22,7 @@ import type { TodayEvent } from './EventCard';
 import { elevation, haptics, radii, spacing, useTheme, type SportKey } from '@/design';
 import { api } from '@/lib/api';
 import { formatLocalTime } from '@/lib/time';
-import { effectiveMatchStatus } from '@kairo/core';
+import { effectiveMatchStatus } from '@kairo/core/match-status';
 
 type Openable = TodayEvent & { isStarred?: boolean };
 

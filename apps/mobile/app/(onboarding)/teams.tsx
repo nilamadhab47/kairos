@@ -150,7 +150,7 @@ export default function TeamsOnboarding() {
     queryKey: ['catalog', 'competitions', activeSport],
     queryFn: () =>
       api<CompetitionsResponse>(
-        `/api/catalog/competitions?category=${encodeURIComponent(activeSport)}&limit=60&dedupeBySeason=true`,
+        `/api/catalog/competitions?category=${encodeURIComponent(activeSport)}&limit=200&dedupeBySeason=true`,
       ),
     staleTime: 60_000,
     enabled: compsForActive.length > 0,

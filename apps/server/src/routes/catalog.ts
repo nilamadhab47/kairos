@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { isLaunchSport } from '@kairo/core';
 import { prisma } from '@kairo/db';
 import { sportsRouter, THESPORTSDB_LICENSE_NOTE } from '@kairo/sports';
 import {
@@ -39,10 +40,12 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       },
     },
     async () => {
-      const sports = await prisma.sport.findMany({
-        where: { isActive: true },
-        orderBy: { sortOrder: 'asc' },
-      });
+      const sports = (
+        await prisma.sport.findMany({
+          where: { isActive: true },
+          orderBy: { sortOrder: 'asc' },
+        })
+      ).filter((s) => isLaunchSport(s.id));
 
       const healthByProvider = new Map(
         sportsRouter.listProviders().map((p) => [p.name, p]),

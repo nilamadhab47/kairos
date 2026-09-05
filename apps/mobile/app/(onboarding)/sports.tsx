@@ -96,10 +96,13 @@ export default function SportsOnboarding() {
 
   // Prefill from saved follows once when editing.
   useEffect(() => {
-    if (!manage || !summary.data || hydrated.current) return;
-    setSelected(new Set(sportIdsFromSummary(summary.data)));
+    if (!manage || !summary.data || !catalog.data || hydrated.current) return;
+    const allowed = new Set(catalog.data.sports.map((s) => s.category));
+    setSelected(
+      new Set(sportIdsFromSummary(summary.data).filter((id) => allowed.has(id))),
+    );
     hydrated.current = true;
-  }, [manage, summary.data]);
+  }, [manage, summary.data, catalog.data]);
 
   const toggle = useCallback((id: string) => {
     setSelected((prev) => {
@@ -115,7 +118,9 @@ export default function SportsOnboarding() {
   const onContinue = useCallback(() => {
     if (!canContinue) return;
     haptics.success();
-    const all = [...selected];
+    const allowed = new Set((catalog.data?.sports ?? []).map((s) => s.category));
+    const all = [...selected].filter((id) => allowed.has(id));
+    if (all.length === 0) return;
     const leagueSports = sportsNeedingCompetitions(all);
     // Cricket / F1 skip leagues — go straight to sides / constructors.
     // Mixed picks (e.g. football + cricket) still hit competitions first for
@@ -135,7 +140,7 @@ export default function SportsOnboarding() {
       pathname: '/(onboarding)/competitions',
       params: { sports: all.join(','), ...manageParams(mode) },
     });
-  }, [canContinue, selected, mode]);
+  }, [canContinue, selected, mode, catalog.data]);
 
   const helper = useMemo(() => {
     if (selected.size === 0) return 'Pick at least one · you can change this later.';

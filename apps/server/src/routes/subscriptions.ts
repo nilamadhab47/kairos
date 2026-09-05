@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { isLaunchSport } from '@kairo/core';
 import { Prisma, prisma } from '@kairo/db';
 import { canonicalizeCompetitionIds } from '../lib/competitions.js';
 
@@ -16,10 +17,12 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
     },
     async (req) => {
       const userId = req.sessionUser!.id;
-      const subs = await prisma.userSubscription.findMany({
-        where: { userId, isActive: true },
-        orderBy: { createdAt: 'asc' },
-      });
+      const subs = (
+        await prisma.userSubscription.findMany({
+          where: { userId, isActive: true },
+          orderBy: { createdAt: 'asc' },
+        })
+      ).filter((s) => isLaunchSport(s.category));
 
       // Hydrate competition + team names/logos in exactly 2 batched queries,
       // regardless of how many subscriptions the user has.
@@ -108,6 +111,7 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
       };
 
       for (const s of subs) {
+        if (!isLaunchSport(s.category)) continue;
         const g = ensure(s.category);
         if (s.entityType === 'competition') {
           g.totals.competition += 1;

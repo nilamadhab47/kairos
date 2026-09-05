@@ -19,4 +19,24 @@ config.resolver.nodeModulesPaths = [
 config.resolver.disableHierarchicalLookup = true;
 config.resolver.unstable_enablePackageExports = true;
 
+// Workspace packages use NodeNext `.js` specifiers pointing at `.ts` sources.
+// Metro does not rewrite those; map them so `@kairo/core` can bundle on EAS.
+const defaultResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const resolve = defaultResolveRequest ?? context.resolveRequest;
+  if (
+    moduleName.startsWith('.') &&
+    moduleName.endsWith('.js') &&
+    typeof context.originModulePath === 'string' &&
+    context.originModulePath.includes(`${path.sep}packages${path.sep}`)
+  ) {
+    try {
+      return resolve(context, moduleName.replace(/\.js$/, '.ts'), platform);
+    } catch {
+      // fall through to the original specifier
+    }
+  }
+  return resolve(context, moduleName, platform);
+};
+
 module.exports = withNativeWind(config, { input: './global.css' });

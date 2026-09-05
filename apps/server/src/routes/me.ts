@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, prisma } from '@kairo/db';
 import { personalizedMatchWhere } from '../lib/subscriptions.js';
-import { effectiveMatchStatus } from '@kairo/core';
+import { effectiveMatchStatus, isLaunchSport } from '@kairo/core';
 import { liveFeedWhere } from '../lib/match-live.js';
 import {
   parseTimeToDate,
@@ -581,8 +581,8 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
                 kind: 'no_events_in_window' as const,
                 message:
                   q.sport || q.competition || q.entity
-                    ? 'Nothing scheduled for this filter in the current window.'
-                    : "Quiet stretch — you'll be back to something soon.",
+                    ? 'Nothing in this window for that filter. Flip months for earlier results, or open a team for the last 90 days.'
+                    : 'Nothing in this month yet. Finished matches show as FT with the score — flip months for earlier results. Follow Champions League (or a club) to see UEFA fixtures.',
               }
             : null,
         source: 'db',
@@ -606,10 +606,12 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const subs = await prisma.userSubscription.findMany({
-        where: { userId: req.sessionUser!.id, isActive: true },
-        select: { category: true, entityType: true, entityId: true, entityName: true },
-      });
+      const subs = (
+        await prisma.userSubscription.findMany({
+          where: { userId: req.sessionUser!.id, isActive: true },
+          select: { category: true, entityType: true, entityId: true, entityName: true },
+        })
+      ).filter((s) => isLaunchSport(s.category));
 
       const sportIds = [...new Set(subs.map((s) => s.category))];
       const compIds = subs.filter((s) => s.entityType === 'competition').map((s) => s.entityId);

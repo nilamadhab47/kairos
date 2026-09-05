@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeInDown, FadeInUp, Layout } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -86,15 +86,18 @@ export default function TeamScreen() {
     return null;
   }, [follows.data, teamId]);
 
-  // Next 60 days of matches for this team.
-  const rangeFrom = useMemo(() => new Date().toISOString(), []);
+  // Next 90 days of history + 60 days upcoming so a missed match is still here.
+  const rangeFrom = useMemo(
+    () => new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+    [],
+  );
   const rangeTo = useMemo(
     () => new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
     [],
   );
 
   const cal = useQuery({
-    queryKey: ['team', teamId, 'upcoming'],
+    queryKey: ['team', teamId, 'history'],
     queryFn: () =>
       api<CalendarResponse>(
         `/api/me/calendar?entity=${encodeURIComponent(teamId)}&from=${encodeURIComponent(rangeFrom)}&to=${encodeURIComponent(rangeTo)}`,
@@ -106,7 +109,7 @@ export default function TeamScreen() {
     haptics.select();
     setRefreshing(true);
     try {
-      await qc.invalidateQueries({ queryKey: ['team', teamId, 'upcoming'] });
+      await qc.invalidateQueries({ queryKey: ['team', teamId, 'history'] });
     } finally {
       setRefreshing(false);
     }
@@ -117,8 +120,12 @@ export default function TeamScreen() {
     : theme.color.accent;
 
   const displayName = team?.label ?? params.name ?? 'Team';
-  const totalMatches = cal.data?.totalMatches ?? 0;
   const days = cal.data?.days ?? [];
+  const { resultDays, upcomingDays, resultCount, upcomingCount } = useMemo(
+    () => splitHistory(days),
+    [days],
+  );
+  const totalMatches = resultCount + upcomingCount;
 
   return (
     <Screen edges={['top']}>
@@ -163,10 +170,10 @@ export default function TeamScreen() {
             <View style={[styles.pill, { borderColor: theme.color.border }]}>
               <Text style={[styles.pillText, { color: theme.color.textMuted }]}>
                 {totalMatches === 0
-                  ? 'No upcoming matches'
-                  : totalMatches === 1
-                    ? '1 upcoming match'
-                    : `${totalMatches} upcoming matches`}
+                  ? 'No recent matches'
+                  : [resultCount ? `${resultCount} result${resultCount === 1 ? '' : 's'}` : null, upcomingCount ? `${upcomingCount} upcoming` : null]
+                      .filter(Boolean)
+                      .join(' · ')}
               </Text>
             </View>
           </View>
@@ -183,34 +190,42 @@ export default function TeamScreen() {
           <ErrorState onRetry={() => void cal.refetch()} />
         ) : days.length === 0 ? (
           <EmptyState
-            title="Nothing scheduled"
+            title="Nothing on the sheet"
             description={
               cal.data?.empty?.message ??
-              `${displayName} has no upcoming fixtures in the next 60 days.`
+              `${displayName} has no recent results or upcoming fixtures in this window.`
             }
           />
         ) : (
           <View style={styles.list}>
-            {days.map((day, di) => (
-              <Animated.View
-                key={day.date}
-                entering={FadeInUp.delay(40 * di).duration(240)}
-                layout={Layout.springify()}
-                style={styles.daySection}
-              >
-                <DayHeader date={day.date} tz={cal.data?.timezone} />
-                <View style={{ gap: spacing[2] }}>
-                  {day.matches.map((m) => (
-                    <CalendarEventRow
-                      key={m.id}
-                      match={m}
-                      timezone={cal.data?.timezone}
-                      onPress={() => openEvent(matchToEvent(m), cal.data?.timezone)}
-                    />
-                  ))}
-                </View>
-              </Animated.View>
-            ))}
+            {upcomingDays.length > 0 ? (
+              <>
+                <Text style={[styles.sectionLabel, { color: theme.color.textFaint }]}>UPCOMING</Text>
+                {upcomingDays.map((day, di) => (
+                  <DayBlock
+                    key={`u-${day.date}`}
+                    day={day}
+                    di={di}
+                    tz={cal.data?.timezone}
+                    onOpen={(m) => openEvent(matchToEvent(m), cal.data?.timezone)}
+                  />
+                ))}
+              </>
+            ) : null}
+            {resultDays.length > 0 ? (
+              <>
+                <Text style={[styles.sectionLabel, { color: theme.color.textFaint }]}>RESULTS</Text>
+                {resultDays.map((day, di) => (
+                  <DayBlock
+                    key={`r-${day.date}`}
+                    day={day}
+                    di={di}
+                    tz={cal.data?.timezone}
+                    onOpen={(m) => openEvent(matchToEvent(m), cal.data?.timezone)}
+                  />
+                ))}
+              </>
+            ) : null}
           </View>
         )}
       </ScrollView>
@@ -219,6 +234,63 @@ export default function TeamScreen() {
 }
 
 /* -------------------------------------------------------------------------- */
+
+function isFinished(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === 'completed' || s === 'complete' || s === 'ft' || s === 'finished' || s === 'final';
+}
+
+function splitHistory(days: CalendarDay[]): {
+  resultDays: CalendarDay[];
+  upcomingDays: CalendarDay[];
+  resultCount: number;
+  upcomingCount: number;
+} {
+  const resultDays: CalendarDay[] = [];
+  const upcomingDays: CalendarDay[] = [];
+  let resultCount = 0;
+  let upcomingCount = 0;
+  for (const day of days) {
+    const finished = day.matches.filter((m) => isFinished(m.status));
+    const rest = day.matches.filter((m) => !isFinished(m.status));
+    if (rest.length > 0) {
+      upcomingDays.push({ date: day.date, matches: rest });
+      upcomingCount += rest.length;
+    }
+    if (finished.length > 0) {
+      resultDays.push({ date: day.date, matches: finished });
+      resultCount += finished.length;
+    }
+  }
+  resultDays.reverse();
+  return { resultDays, upcomingDays, resultCount, upcomingCount };
+}
+
+function DayBlock({
+  day,
+  di,
+  tz,
+  onOpen,
+}: {
+  day: CalendarDay;
+  di: number;
+  tz?: string;
+  onOpen: (m: FeedMatch) => void;
+}) {
+  return (
+    <Animated.View
+      entering={FadeInUp.delay(40 * di).duration(240)}
+      style={styles.daySection}
+    >
+      <DayHeader date={day.date} tz={tz} />
+      <View style={{ gap: spacing[2] }}>
+        {day.matches.map((m) => (
+          <CalendarEventRow key={m.id} match={m} timezone={tz} onPress={() => onOpen(m)} />
+        ))}
+      </View>
+    </Animated.View>
+  );
+}
 
 function DayHeader({ date, tz }: { date: string; tz?: string }) {
   const theme = useTheme();
@@ -300,6 +372,12 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 12, fontWeight: '600' },
 
   list: { paddingHorizontal: spacing[5], marginTop: spacing[3], gap: spacing[6] },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: -spacing[2],
+  },
   daySection: { gap: spacing[3] },
   dayHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   dayLabel: { fontSize: 13, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
