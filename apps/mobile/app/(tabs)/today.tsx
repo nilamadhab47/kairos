@@ -13,7 +13,7 @@ import {
   useEventDetail,
   YourTeamsStrip,
 } from '@/components';
-import { haptics, spacing, useTheme } from '@/design';
+import { fonts, haptics, spacing, useTheme } from '@/design';
 import { api } from '@/lib/api';
 import { matchToEvent, type FeedMatch } from '@/lib/feed';
 import { greeting, useNow } from '@/lib/time';
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing[12] },
   header: { paddingHorizontal: spacing[5], paddingTop: spacing[3] },
   eyebrow: { fontSize: 12, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
-  title: { fontSize: 34, fontWeight: '800', letterSpacing: -0.6, marginTop: spacing[1] },
+  title: { fontSize: 34, fontWeight: '700', letterSpacing: -0.6, marginTop: spacing[1], fontFamily: fonts.display },
   subtitle: { fontSize: 14, marginTop: spacing[1] },
   list: { gap: spacing[3], paddingHorizontal: spacing[5] },
   emptyLead: { fontSize: 14, lineHeight: 20 },

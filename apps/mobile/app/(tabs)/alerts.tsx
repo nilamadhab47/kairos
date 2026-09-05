@@ -21,7 +21,7 @@ import {
   type NotificationItem,
   type TodayEvent,
 } from '@/components';
-import { haptics, motion, radii, spacing, useTheme } from '@/design';
+import { fonts, haptics, motion, radii, spacing, useTheme } from '@/design';
 import { api } from '@/lib/api';
 
 /* -------------------------------------------------------------------------- */
@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 999,
   },
-  title: { fontSize: 34, fontWeight: '800', letterSpacing: -0.6, marginTop: spacing[1] },
+  title: { fontSize: 34, fontWeight: '700', letterSpacing: -0.6, marginTop: spacing[1], fontFamily: fonts.display },
   subtitle: { fontSize: 14, marginTop: spacing[1] },
   filterBar: {
     flexDirection: 'row',

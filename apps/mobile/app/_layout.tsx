@@ -2,6 +2,17 @@ import '../global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
+import { useFonts } from 'expo-font';
+import {
+  SpaceGrotesk_600SemiBold,
+  SpaceGrotesk_700Bold,
+} from '@expo-google-fonts/space-grotesk';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -25,6 +36,18 @@ Notifications.setNotificationHandler({
 });
 
 export default function RootLayout() {
+  // Obsidian Precision type pairing: Space Grotesk (headers/scores/telemetry)
+  // + Inter (body). Hold the splash until fonts resolve so text never flashes.
+  const [fontsLoaded, fontError] = useFonts({
+    SpaceGrotesk_600SemiBold,
+    SpaceGrotesk_700Bold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+  if (!fontsLoaded && !fontError) return null;
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
@@ -35,7 +58,7 @@ export default function RootLayout() {
           <ErrorBoundary>
             <EventDetailProvider>
               <StatusBar style="light" />
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0E14' } }} />
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0E14' } }} />
             </EventDetailProvider>
           </ErrorBoundary>
         </BottomSheetModalProvider>

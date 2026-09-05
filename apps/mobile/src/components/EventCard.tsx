@@ -4,7 +4,7 @@ import { Countdown } from './Countdown';
 import { StatusPill, type MatchState } from './StatusPill';
 import { TeamCrest } from './TeamCrest';
 import { formatLocalTime } from '@/lib/time';
-import { radii, spacing, useTheme, type SportKey } from '@/design';
+import { fonts, radii, spacing, useTheme, type SportKey } from '@/design';
 import { effectiveMatchStatus } from '@kairo/core/match-status';
 
 export type TodayEvent = {
@@ -44,14 +44,15 @@ export function EventCard({ event, variant = 'default', timezone, onPress }: Pro
   const isHero = variant === 'hero';
 
   return (
-    <Card onPress={onPress} padded={false} style={{ borderColor: withAlpha(accent, 0.35) }}>
+    <Card onPress={onPress} padded={false}>
+      {/* Leading-edge sport accent pill — Obsidian Precision signature. */}
       <View
         style={[
           styles.accentStripe,
-          { backgroundColor: accent, height: isHero ? 4 : 3 },
+          { backgroundColor: accent, width: isHero ? 4 : 3 },
         ]}
       />
-      <View style={{ padding: isHero ? spacing[5] : spacing[4] }}>
+      <View style={{ padding: isHero ? spacing[5] : spacing[4], paddingLeft: (isHero ? spacing[5] : spacing[4]) + 4 }}>
         <View style={styles.topRow}>
           <View style={styles.chip}>
             <View style={[styles.chipDot, { backgroundColor: accent }]} />
@@ -138,9 +139,10 @@ function MatchBody({
             style={{
               color: theme.color.text,
               fontSize: scoreSize,
-              fontWeight: '800',
+              fontWeight: '700',
               fontVariant: ['tabular-nums'],
               letterSpacing: -0.5,
+              fontFamily: fonts.display,
             }}
           >
             {score?.home ?? 0}
@@ -154,6 +156,7 @@ function MatchBody({
               fontSize: hero ? 20 : 14,
               fontWeight: '700',
               letterSpacing: 1,
+              fontFamily: fonts.data,
             }}
           >
             VS
@@ -216,21 +219,20 @@ function sportLabel(id: string): string {
   }
 }
 
-function withAlpha(hex: string, a: number): string {
-  const c = hex.replace('#', '');
-  if (c.length !== 6) return hex;
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
 const styles = StyleSheet.create({
-  accentStripe: { width: '100%', borderTopLeftRadius: radii.card, borderTopRightRadius: radii.card },
+  accentStripe: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderTopLeftRadius: radii.card,
+    borderBottomLeftRadius: radii.card,
+    zIndex: 1,
+  },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing[3] },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 },
   chipDot: { width: 6, height: 6, borderRadius: 999 },
-  chipText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.1 },
+  chipText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.1, fontFamily: fonts.bodyBold },
   matchWrap: { flexDirection: 'row', alignItems: 'center' },
   teamCol: { flex: 1, alignItems: 'center', gap: 8 },
   centerCol: { paddingHorizontal: spacing[3] },
@@ -241,5 +243,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  timeText: { fontSize: 12, fontWeight: '600', letterSpacing: 0.2 },
+  timeText: { fontSize: 12, fontWeight: '600', letterSpacing: 0.2, fontFamily: fonts.data },
 });

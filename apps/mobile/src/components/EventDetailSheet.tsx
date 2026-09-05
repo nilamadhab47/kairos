@@ -19,7 +19,7 @@ import { Countdown } from './Countdown';
 import { StatusPill, type MatchState } from './StatusPill';
 import { TeamCrest } from './TeamCrest';
 import type { TodayEvent } from './EventCard';
-import { elevation, haptics, radii, spacing, useTheme, type SportKey } from '@/design';
+import { elevation, fonts, haptics, radii, spacing, useTheme, type SportKey } from '@/design';
 import { api } from '@/lib/api';
 import { formatLocalTime } from '@/lib/time';
 import { effectiveMatchStatus } from '@kairo/core/match-status';
@@ -451,15 +451,23 @@ const styles = StyleSheet.create({
   },
   teamCol: { flex: 1, alignItems: 'center', gap: spacing[2] },
   vsCol: { paddingHorizontal: spacing[3] },
-  teamName: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  score: { fontSize: 36, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.6 },
-  vs: { fontSize: 18, fontWeight: '700', letterSpacing: 1.4 },
+  teamName: { fontSize: 14, fontWeight: '600', textAlign: 'center', fontFamily: fonts.bodySemiBold },
+  // display-score: 44px Space Grotesk 700 per the design system
+  score: {
+    fontSize: 44,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -1.7,
+    fontFamily: fonts.display,
+  },
+  vs: { fontSize: 18, fontWeight: '700', letterSpacing: 1.4, fontFamily: fonts.data },
   title: {
     fontSize: 26,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.4,
     marginTop: spacing[5],
     marginBottom: spacing[3],
+    fontFamily: fonts.display,
   },
   liveBanner: {
     alignSelf: 'center',

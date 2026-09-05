@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { spacing, useTheme } from '@/design';
+import { fonts, spacing, useTheme } from '@/design';
 
 type Props = {
   title: string;
@@ -25,5 +25,5 @@ const styles = StyleSheet.create({
     marginBottom: spacing[2],
     marginTop: spacing[5],
   },
-  title: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
+  title: { fontSize: 11, fontWeight: '700', letterSpacing: 0.9, fontFamily: fonts.bodyBold },
 });

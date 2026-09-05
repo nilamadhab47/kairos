@@ -33,9 +33,11 @@ export function Chip({
   const highlight = useSharedValue(selected ? 1 : 0);
 
   const accent = accentColor ?? theme.color.accent;
-  const bgOn = withColorAlpha(accent, 0.14);
-  const bgOff = theme.color.bgElevated;
-  const borderOn = withColorAlpha(accent, 0.55);
+  // Obsidian Precision chips: quiet layer-01 at rest, elevated card surface
+  // with a live accent border + soft glow when active.
+  const bgOn = theme.color.surface;
+  const bgOff = '#111827';
+  const borderOn = accent;
   const borderOff = theme.color.border;
 
   useEffect(() => {
@@ -51,6 +53,10 @@ export function Chip({
     transform: [{ scale: scale.value }],
     backgroundColor: highlight.value > 0.5 ? bgOn : bgOff,
     borderColor: highlight.value > 0.5 ? borderOn : borderOff,
+    shadowColor: accent,
+    shadowOpacity: highlight.value > 0.5 ? 0.2 : 0,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   }));
 
   return (
@@ -91,9 +97,9 @@ const styles = StyleSheet.create({
   base: {
     borderRadius: radii.pill,
     borderWidth: 1,
-    paddingHorizontal: spacing[3],
+    paddingHorizontal: spacing[4],
     paddingVertical: 6,
-    minHeight: 32,
+    minHeight: 36,
     alignSelf: 'flex-start',
     justifyContent: 'center',
   },

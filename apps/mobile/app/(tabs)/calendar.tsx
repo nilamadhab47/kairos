@@ -24,7 +24,7 @@ import {
   useEventDetail,
   type SportIconName,
 } from '@/components';
-import { haptics, radii, spacing, useTheme, type SportKey } from '@/design';
+import { fonts, haptics, radii, spacing, useTheme, type SportKey } from '@/design';
 import { api } from '@/lib/api';
 import { matchToEvent, type FeedMatch } from '@/lib/feed';
 import { useCalendarView } from '@/lib/useCalendarView';
@@ -673,9 +673,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 30,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.4,
     marginTop: spacing[1],
+    fontFamily: fonts.display,
   },
   navRow: {
     flexDirection: 'row',

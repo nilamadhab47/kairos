@@ -9,7 +9,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { radii, spacing, useTheme } from '@/design';
+import { fonts, radii, spacing, useTheme } from '@/design';
 
 export type MatchState = 'live' | 'upcoming' | 'ft' | 'postponed' | 'cancelled';
 
@@ -62,12 +62,13 @@ export function StatusPill({ state, label }: Props) {
 function pillMeta(state: MatchState, theme: ReturnType<typeof useTheme>, override?: string) {
   switch (state) {
     case 'live':
+      // Electric match pulse — blue per the Obsidian Precision design.
       return {
         text: override ?? 'LIVE',
-        fg: theme.color.text,
+        fg: theme.color.live,
         dot: theme.color.live,
-        bg: 'rgba(52, 211, 153, 0.14)',
-        border: 'rgba(52, 211, 153, 0.35)',
+        bg: 'rgba(96, 165, 250, 0.12)',
+        border: 'rgba(96, 165, 250, 0.3)',
       };
     case 'ft':
       return {
@@ -117,5 +118,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.1,
+    fontFamily: fonts.bodyBold,
   },
 });

@@ -7,53 +7,71 @@
  * - Every token has a purpose. No decorative colors.
  */
 
+/**
+ * "Obsidian Precision" palette — from the Stitch design system.
+ * Deep obsidian layers, razor-thin borders, restrained neon accents.
+ */
 export const palette = {
   ink: {
-    900: '#05070A',
-    800: '#080B0D',
-    700: '#0D1214',
-    600: '#11171A',
-    500: '#161C20',
-    400: '#1E2429',
-    300: '#252C31',
-    200: '#3A434B',
-    100: '#5A6470',
+    900: '#0A0E14', // canvas base — deep obsidian charcoal
+    800: '#0A0E14', // page background
+    700: '#111827', // layer 01 — section panels
+    600: '#1A2230', // layer 02 — elevated cards
+    500: '#1F2937', // layer 03 — modals / sheets
+    400: '#1F2937',
+    300: '#2E3B4E', // stroke subdued — 1px panel outlines
+    200: '#374151', // stroke active — focus borders, dividers
+    100: '#6B7280',
   },
   paper: {
-    900: '#F5F7FA',
+    900: '#F9FAFB', // text high-contrast — scores, titles
     800: '#EDF0F5',
     700: '#DCE1EA',
     600: '#C2C9D6',
     500: '#A0A8B8',
-    400: '#8B93A7',
-    300: '#6E7488',
+    400: '#9CA3AF', // text medium — venues, team names
+    300: '#6B7280', // text muted — timestamps, metadata
     200: '#4C5162',
     100: '#2A2E3B',
   },
   brand: {
-    // teal signal accent — chronograph feel
+    // electric mint cyan — the KAIROS signal accent
     50: '#E6FBF7',
     100: '#B7F3E5',
-    200: '#7EE7CE',
-    300: '#3ED5BB',
-    400: '#2FBEA6',
-    500: '#22A38C',
-    600: '#178072',
-    700: '#0F5E55',
+    200: '#62FAE3',
+    300: '#2DD4BF',
+    400: '#2DD4BF',
+    500: '#14B8A6',
+    600: '#0D9488',
+    700: '#0F766E',
   },
-  live: '#34D399',
-  danger: '#F87171',
-  warn: '#F6B84B',
-  success: '#34D399',
+  live: '#60A5FA', // electric match pulse (blue, per design)
+  danger: '#EF4444',
+  warn: '#F59E0B',
+  success: '#2DD4BF',
   sport: {
-    football: '#5AA7FF',
-    f1: '#F16060',
-    cricket: '#3EC28B',
+    football: '#2DD4BF', // electric mint cyan
+    f1: '#EF4444', // telemetry racing red
+    cricket: '#F59E0B', // warm amber gold
     tennis: '#F0C247',
     basketball: '#F08A47',
     hockey: '#7C9CFF',
     baseball: '#B87CFF',
   } as const,
+} as const;
+
+/**
+ * Font families — Space Grotesk for headers/scores/telemetry,
+ * Inter for body and operational data. Loaded in the root layout.
+ */
+export const fonts = {
+  display: 'SpaceGrotesk_700Bold',
+  displayMedium: 'SpaceGrotesk_600SemiBold',
+  data: 'SpaceGrotesk_600SemiBold',
+  body: 'Inter_400Regular',
+  bodyMedium: 'Inter_500Medium',
+  bodySemiBold: 'Inter_600SemiBold',
+  bodyBold: 'Inter_700Bold',
 } as const;
 
 export type SportKey = keyof typeof palette.sport;
@@ -83,19 +101,20 @@ export const spacing = {
 } as const;
 
 export const typography = {
-  display: { size: 34, lineHeight: 40, weight: '700' as const, tracking: -0.4 },
-  title: { size: 22, lineHeight: 28, weight: '600' as const, tracking: -0.2 },
-  subtitle: { size: 17, lineHeight: 24, weight: '600' as const },
-  body: { size: 15, lineHeight: 22, weight: '400' as const },
-  bodyStrong: { size: 15, lineHeight: 22, weight: '600' as const },
-  caption: { size: 12, lineHeight: 16, weight: '500' as const, tracking: 0.2 },
-  overline: { size: 11, lineHeight: 14, weight: '700' as const, tracking: 1.2 },
+  display: { size: 34, lineHeight: 40, weight: '700' as const, tracking: -0.4, family: fonts.display },
+  title: { size: 22, lineHeight: 28, weight: '600' as const, tracking: -0.2, family: fonts.displayMedium },
+  subtitle: { size: 17, lineHeight: 24, weight: '600' as const, family: fonts.displayMedium },
+  body: { size: 15, lineHeight: 22, weight: '400' as const, family: fonts.body },
+  bodyStrong: { size: 15, lineHeight: 22, weight: '600' as const, family: fonts.bodySemiBold },
+  caption: { size: 12, lineHeight: 16, weight: '500' as const, tracking: 0.2, family: fonts.bodyMedium },
+  overline: { size: 11, lineHeight: 14, weight: '700' as const, tracking: 1.2, family: fonts.bodyBold },
   score: {
     size: 28,
     lineHeight: 32,
     weight: '700' as const,
     tracking: -0.4,
     variant: 'tabular-nums' as const,
+    family: fonts.display,
   },
 } as const;
 

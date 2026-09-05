@@ -29,7 +29,7 @@ import {
   providerLabelFromSession,
   type SportIconName,
 } from '@/components';
-import { haptics, radii, spacing, useTheme, type SportKey } from '@/design';
+import { fonts, haptics, radii, spacing, useTheme, type SportKey } from '@/design';
 import { api } from '@/lib/api';
 import { useSession } from '@/lib/auth-client';
 import { registerPushDevice } from '@/lib/push';
@@ -742,7 +742,7 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: 68 + spacing[8] },
   header: { paddingHorizontal: spacing[5], paddingTop: spacing[3] },
   eyebrow: { fontSize: 12, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
-  title: { fontSize: 34, fontWeight: '800', letterSpacing: -0.6, marginTop: spacing[1] },
+  title: { fontSize: 34, fontWeight: '700', letterSpacing: -0.6, marginTop: spacing[1], fontFamily: fonts.display },
   pad: { paddingHorizontal: spacing[5] },
 
   sectionWrap: { marginTop: spacing[6] },
