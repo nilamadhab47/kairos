@@ -91,6 +91,28 @@ type TeamStanding = {
 
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Filter a list of match days to matches from a given competition (by name).
+ * Declared as a const arrow up top so Metro/Hermes has it in scope for the
+ * component's useMemo calls — plain function declarations don't always hoist
+ * cleanly through the expo-router bundler transforms.
+ */
+const filterDaysByCompetition = (
+  days: CalendarDay[],
+  competitionName: string | null,
+): CalendarDay[] => {
+  if (!competitionName) return days;
+  const target = competitionName.toLowerCase();
+  const out: CalendarDay[] = [];
+  for (const day of days) {
+    const matches = day.matches.filter(
+      (m) => (m.competition?.name ?? '').toLowerCase() === target,
+    );
+    if (matches.length > 0) out.push({ date: day.date, matches });
+  }
+  return out;
+};
+
 export default function TeamScreen() {
   const theme = useTheme();
   const qc = useQueryClient();
@@ -520,27 +542,6 @@ export default function TeamScreen() {
 }
 
 /* -------------------------------------------------------------------------- */
-
-/**
- * Filter a list of match days to only include matches from a given
- * competition (by name — competition IDs may vary across ingest sources).
- * Empty days are dropped.
- */
-function filterDaysByCompetition(
-  days: CalendarDay[],
-  competitionName: string | null,
-): CalendarDay[] {
-  if (!competitionName) return days;
-  const target = competitionName.toLowerCase();
-  const out: CalendarDay[] = [];
-  for (const day of days) {
-    const matches = day.matches.filter(
-      (m) => (m.competition?.name ?? '').toLowerCase() === target,
-    );
-    if (matches.length > 0) out.push({ date: day.date, matches });
-  }
-  return out;
-}
 
 function isFinished(status: string): boolean {
   const s = status.toLowerCase();
