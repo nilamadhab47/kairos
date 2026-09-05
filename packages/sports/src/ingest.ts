@@ -617,10 +617,18 @@ export async function upsertStandings(
     create: { competitionId, season },
   });
 
+  // Look up competition once for sport + format so we can auto-create teams
+  // that appear in the standings feed but aren't in the DB yet.
+  const competition = await prisma.competition.findUnique({
+    where: { id: competitionId },
+    select: { sportId: true, format: true },
+  });
+
   await prisma.standingRow.deleteMany({ where: { standingId: standing.id } });
 
   let inserted = 0;
   for (const row of standings.rows) {
+    const canonicalName = canonicalTeamName(row.teamName);
     const externalTeamId = row.teamId.includes(':')
       ? row.teamId.split(':').pop()!
       : row.teamId;
@@ -629,10 +637,15 @@ export async function upsertStandings(
       (await prisma.team.findFirst({
         where: {
           competitions: { some: { competitionId } },
-          name: row.teamName,
+          name: canonicalName,
         },
       })) ??
-      (await prisma.team.findFirst({ where: { name: row.teamName } }));
+      (await prisma.team.findFirst({
+        where: {
+          ...(competition ? { sportId: competition.sportId } : {}),
+          name: canonicalName,
+        },
+      }));
 
     // Try provider-ref match when name lookup misses (teams already ingested under this provider).
     if (!team) {
@@ -651,6 +664,26 @@ export async function upsertStandings(
               (r.externalId === externalTeamId || r.externalId === row.teamId),
           );
         }) ?? null;
+    }
+
+    // Auto-create the team from the standings feed if we still don't have
+    // a match. Standings are the authoritative roster for a league — every
+    // team appearing here belongs in the DB.
+    if (!team && competition) {
+      const createdId = await upsertTeam(
+        competition.sportId as SportId,
+        {
+          id: row.teamId,
+          name: row.teamName,
+          logoUrl: row.teamLogoUrl ?? undefined,
+        },
+        competitionId,
+        standings.providerRef.provider,
+        (competition.format as CompetitionFormat | null) ?? null,
+      );
+      if (createdId) {
+        team = await prisma.team.findUnique({ where: { id: createdId } });
+      }
     }
 
     if (!team) continue;
