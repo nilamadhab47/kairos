@@ -14,6 +14,7 @@ import {
   BottomSheetScrollView,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Countdown } from './Countdown';
 import { StatusPill, type MatchState } from './StatusPill';
@@ -120,6 +121,10 @@ export function EventDetailProvider({ children }: { children: ReactNode }) {
               haptics.warning();
               dismiss.mutate(event.id);
             }}
+            onOpenCalendarSync={() => {
+              close();
+              router.push('/settings/calendar');
+            }}
             starring={star.isPending}
             dismissing={dismiss.isPending}
           />
@@ -134,6 +139,7 @@ function SheetBody({
   timezone,
   onStar,
   onDismissFromToday,
+  onOpenCalendarSync,
   starring,
   dismissing,
 }: {
@@ -141,6 +147,7 @@ function SheetBody({
   timezone?: string;
   onStar: () => void;
   onDismissFromToday: () => void;
+  onOpenCalendarSync: () => void;
   starring: boolean;
   dismissing: boolean;
 }) {
@@ -194,48 +201,87 @@ function SheetBody({
       <View style={styles.topRow}>
         <View style={styles.chip}>
           <View style={[styles.chipDot, { backgroundColor: accent }]} />
-          <Text style={[styles.chipText, { color: theme.color.textMuted }]}>
+          <Text style={[styles.chipText, { color: theme.color.textMuted }]} numberOfLines={1}>
             {sportLabel(event.category)}
             {event.subtitle ? `  ·  ${event.subtitle}` : ''}
           </Text>
         </View>
-        <StatusPill state={state} />
+        {!isMatch ? <StatusPill state={state} /> : null}
       </View>
 
       {isMatch ? (
         <View style={styles.match}>
           <View style={styles.teamCol}>
-            <TeamCrest
-              name={meta.homeTeam.name}
-              logoUrl={meta.homeTeam.logoUrl}
-              size={64}
-              accentColor={accent}
-            />
+            <View
+              style={[
+                styles.crestTile,
+                { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border },
+              ]}
+            >
+              <TeamCrest
+                name={meta.homeTeam.name}
+                logoUrl={meta.homeTeam.logoUrl}
+                size={56}
+                accentColor={null}
+              />
+            </View>
             <Text style={[styles.teamName, { color: theme.color.text }]} numberOfLines={2}>
               {meta.homeTeam.name}
             </Text>
+            <Text style={[styles.homeAwayTag, { color: theme.color.textFaint }]}>HOME</Text>
           </View>
           <View style={styles.vsCol}>
             {score && (score.home != null || score.away != null) ? (
-              <Text style={[styles.score, { color: theme.color.text }]}>
-                {score.home ?? 0}
-                <Text style={{ color: theme.color.textFaint }}> – </Text>
-                {score.away ?? 0}
-              </Text>
+              <View style={styles.scoreRow}>
+                <Text
+                  style={[
+                    styles.score,
+                    {
+                      color:
+                        (score.home ?? 0) > (score.away ?? 0) ? accent : theme.color.text,
+                    },
+                  ]}
+                >
+                  {score.home ?? 0}
+                </Text>
+                <Text style={[styles.scoreDash, { color: theme.color.textFaint }]}>–</Text>
+                <Text
+                  style={[
+                    styles.score,
+                    {
+                      color:
+                        (score.away ?? 0) > (score.home ?? 0) ? accent : theme.color.text,
+                    },
+                  ]}
+                >
+                  {score.away ?? 0}
+                </Text>
+              </View>
             ) : (
               <Text style={[styles.vs, { color: theme.color.textFaint }]}>VS</Text>
             )}
+            <View style={{ marginTop: spacing[2] }}>
+              <StatusPill state={state} />
+            </View>
           </View>
           <View style={styles.teamCol}>
-            <TeamCrest
-              name={meta.awayTeam.name}
-              logoUrl={meta.awayTeam.logoUrl}
-              size={64}
-              accentColor={accent}
-            />
+            <View
+              style={[
+                styles.crestTile,
+                { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border },
+              ]}
+            >
+              <TeamCrest
+                name={meta.awayTeam.name}
+                logoUrl={meta.awayTeam.logoUrl}
+                size={56}
+                accentColor={null}
+              />
+            </View>
             <Text style={[styles.teamName, { color: theme.color.text }]} numberOfLines={2}>
               {meta.awayTeam.name}
             </Text>
+            <Text style={[styles.homeAwayTag, { color: theme.color.textFaint }]}>AWAY</Text>
           </View>
         </View>
       ) : (
@@ -255,11 +301,34 @@ function SheetBody({
         </View>
       )}
 
-      <View style={[styles.metaCard, { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border }]}>
-        <MetaRow label="When" value={`${dateLabel} · ${time}`} />
-        {meta.venue ? <MetaRow label="Venue" value={String(meta.venue)} /> : null}
-        {meta.round ? <MetaRow label="Round" value={String(meta.round)} /> : null}
-        {meta.provider ? <MetaRow label="Source" value={String(meta.provider)} /> : null}
+      <View
+        style={[
+          styles.metaCard,
+          { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border },
+        ]}
+      >
+        {/* Competition header row (Stitch: icon tile + name + round caps) */}
+        <View style={styles.compHeader}>
+          <View style={[styles.compIconTile, { backgroundColor: theme.color.surface }]}>
+            <Text style={{ fontSize: 14 }}>🏆</Text>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.compTitle, { color: theme.color.text }]} numberOfLines={1}>
+              {competitionOf(event)}
+            </Text>
+            {cleanRound(meta.round) ? (
+              <Text style={[styles.compRound, { color: theme.color.textFaint }]} numberOfLines={1}>
+                {cleanRound(meta.round)!.toUpperCase()}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        {/* Nested info panel */}
+        <View style={[styles.metaInner, { backgroundColor: theme.color.surface }]}>
+          <MetaRow label="When" value={`${dateLabel} · ${time}`} />
+          {meta.venue ? <MetaRow label="Venue" value={String(meta.venue)} /> : null}
+          {meta.provider ? <MetaRow label="Source" value={String(meta.provider)} /> : null}
+        </View>
       </View>
 
       {showMoments && moments.length > 0 ? (
@@ -270,7 +339,7 @@ function SheetBody({
           ]}
         >
           <View style={styles.dynamicsHeader}>
-            <Text style={[styles.countdownLabel, { color: theme.color.text, fontSize: 15, letterSpacing: 0 }]}>
+            <Text style={[styles.countdownLabel, { color: theme.color.text, fontSize: 17, letterSpacing: 0 }]}>
               Match Dynamics
             </Text>
             <Text style={[styles.dynamicsTag, { color: accent }]}>
@@ -281,6 +350,10 @@ function SheetBody({
             <View style={[styles.timelineRail, { backgroundColor: theme.color.border }]} />
             {moments.map((m) => {
               const isAway = m.team === 'away';
+              const isGoal = m.type === 'goal' || m.type === 'penalty';
+              // Home moments carry the sport accent, away moments the cool
+              // secondary blue — mirrors the Stitch left/right colour split.
+              const sideTone = isAway ? '#A4C9FF' : accent;
               return (
                 <View key={m.id} style={styles.timelineRow}>
                   {/* Home side (left) */}
@@ -290,6 +363,7 @@ function SheetBody({
                         m={m}
                         align="right"
                         teamName={meta.homeTeam?.name}
+                        labelColor={isGoal ? sideTone : theme.color.textMuted}
                       />
                     ) : null}
                   </View>
@@ -300,7 +374,12 @@ function SheetBody({
                       { backgroundColor: theme.color.surface, borderColor: theme.color.border },
                     ]}
                   >
-                    <Text style={[styles.minuteText, { color: theme.color.textMuted }]}>
+                    <Text
+                      style={[
+                        styles.minuteText,
+                        { color: isGoal ? sideTone : theme.color.textMuted },
+                      ]}
+                    >
                       {m.minute != null ? `${m.minute}'` : '—'}
                     </Text>
                   </View>
@@ -311,6 +390,7 @@ function SheetBody({
                         m={m}
                         align="left"
                         teamName={meta.awayTeam?.name}
+                        labelColor={isGoal ? sideTone : theme.color.textMuted}
                       />
                     ) : null}
                   </View>
@@ -321,6 +401,9 @@ function SheetBody({
         </View>
       ) : null}
 
+      {/* Star / Hide only make sense for matches that haven't finished —
+          alerts and "hide from today" have no function on a played game. */}
+      {state !== 'ft' ? (
       <View style={styles.actions}>
         <Pressable
           onPress={onStar}
@@ -356,6 +439,23 @@ function SheetBody({
           </Text>
         </Pressable>
       </View>
+      ) : null}
+
+      {/* Primary CTA — calendar sync. Only for upcoming fixtures; a finished
+          match has nothing left to put on the calendar. */}
+      {state === 'upcoming' ? (
+        <Pressable
+          onPress={() => {
+            haptics.select();
+            onOpenCalendarSync();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Synchronize schedule with calendar"
+          style={[styles.syncBtn, { backgroundColor: accent }]}
+        >
+          <Text style={styles.syncBtnText}>Sync Schedule with iCal / Google</Text>
+        </Pressable>
+      ) : null}
     </BottomSheetScrollView>
   );
 }
@@ -365,27 +465,29 @@ function MomentEntry({
   m,
   align,
   teamName,
+  labelColor,
 }: {
   m: MatchMoment;
   align: 'left' | 'right';
   teamName?: string;
+  labelColor: string;
 }) {
   const theme = useTheme();
   const textAlign = align === 'right' ? 'right' : 'left';
   return (
-    <View style={{ maxWidth: 132 }}>
+    <View style={{ maxWidth: 160 }}>
       <View
         style={{
           flexDirection: align === 'right' ? 'row-reverse' : 'row',
           alignItems: 'center',
-          gap: 4,
+          gap: 5,
         }}
       >
-        <Text style={{ fontSize: 12 }}>{momentGlyph(m)}</Text>
+        <Text style={{ fontSize: 14 }}>{momentGlyph(m)}</Text>
         <Text
           style={{
             color: theme.color.text,
-            fontSize: 12,
+            fontSize: 14,
             fontWeight: '600',
             textAlign,
             flexShrink: 1,
@@ -396,13 +498,26 @@ function MomentEntry({
         </Text>
       </View>
       <Text
-        style={{ color: theme.color.textMuted, fontSize: 10, fontWeight: '600', letterSpacing: 0.3, textAlign }}
+        style={{
+          color: labelColor,
+          fontSize: 11.5,
+          fontWeight: '700',
+          letterSpacing: 0.5,
+          textAlign,
+          marginTop: 2,
+        }}
         numberOfLines={1}
       >
-        {[momentLabel(m), teamName].filter(Boolean).join(' · ').toUpperCase()}
+        {[momentLabel(m), shortTeam(teamName)].filter(Boolean).join(' · ').toUpperCase()}
       </Text>
     </View>
   );
+}
+
+/** Trim long club names for the tiny timeline label lane. */
+function shortTeam(name?: string): string | null {
+  if (!name) return null;
+  return name.length > 14 ? `${name.slice(0, 13)}…` : name;
 }
 
 function MetaRow({ label, value }: { label: string; value: string }) {
@@ -438,12 +553,32 @@ function momentGlyph(m: MatchMoment): string {
 }
 
 function momentLabel(m: MatchMoment): string | null {
-  if (m.type === 'goal') return m.detail?.toLowerCase().includes('own') ? 'Own goal' : null;
-  if (m.type === 'penalty') return m.detail ?? 'Penalty';
-  if (m.type === 'card') return m.detail ?? 'Card';
+  const d = (m.detail ?? '').toLowerCase();
+  // Never echo raw `detail` — providers often stuff "Player (Team)" strings
+  // in there, which duplicated the player name shown on the line above.
+  if (m.type === 'goal') return d.includes('own') ? 'Own goal' : 'Goal';
+  if (m.type === 'penalty') return d.includes('miss') ? 'Penalty missed' : 'Penalty';
+  if (m.type === 'card') return d.includes('red') ? 'Red card' : 'Yellow card';
   if (m.type === 'substitution') return 'Sub';
   if (m.type === 'var') return 'VAR';
-  return m.detail;
+  return null;
+}
+
+/** Competition name for the meta header — subtitle is "Comp · Round". */
+function competitionOf(event: Openable): string {
+  return (event.subtitle ?? '').split(' · ')[0] || sportLabel(event.category);
+}
+
+/** Round value with leaked status strings ("Full Time", "FT", …) removed. */
+function cleanRound(round: unknown): string | null {
+  if (typeof round !== 'string' || round.trim() === '') return null;
+  const s = round.trim().toLowerCase();
+  const statusy = [
+    'ft', 'full time', 'fulltime', 'final', 'finished', 'completed', 'complete',
+    'ended', 'in progress', 'live', 'ongoing', 'scheduled', 'postponed',
+    'half time', 'halftime', 'ht',
+  ];
+  return statusy.includes(s) ? null : round;
 }
 
 function momentFallback(type: string): string {
@@ -520,7 +655,23 @@ const styles = StyleSheet.create({
     marginBottom: spacing[4],
   },
   teamCol: { flex: 1, alignItems: 'center', gap: spacing[2] },
-  vsCol: { paddingHorizontal: spacing[3] },
+  vsCol: { paddingHorizontal: spacing[3], alignItems: 'center' },
+  crestTile: {
+    width: 76,
+    height: 76,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  homeAwayTag: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    fontFamily: fonts.bodyBold,
+  },
+  scoreRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  scoreDash: { fontSize: 22, fontWeight: '300' },
   teamName: { fontSize: 14, fontWeight: '600', textAlign: 'center', fontFamily: fonts.bodySemiBold },
   // display-score: 44px Space Grotesk 700 per the design system
   score: {
@@ -554,9 +705,30 @@ const styles = StyleSheet.create({
     padding: spacing[4],
     gap: spacing[3],
   },
+  compHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
+  compIconTile: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compTitle: { fontSize: 17, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.2 },
+  compRound: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginTop: 2,
+    fontFamily: fonts.bodyBold,
+  },
+  metaInner: {
+    borderRadius: radii.btn,
+    padding: spacing[3],
+    gap: spacing[3],
+  },
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing[4] },
-  metaLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 0.3, minWidth: 56 },
-  metaValue: { flex: 1, fontSize: 14, fontWeight: '600', textAlign: 'right' },
+  metaLabel: { fontSize: 13, fontWeight: '600', letterSpacing: 0.3, minWidth: 56 },
+  metaValue: { flex: 1, fontSize: 15, fontWeight: '600', textAlign: 'right' },
   momentRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -573,7 +745,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing[2],
   },
-  dynamicsTag: { fontSize: 10, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.bodyBold },
+  dynamicsTag: { fontSize: 11, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.bodyBold },
   timeline: { position: 'relative', gap: spacing[3], paddingVertical: spacing[2] },
   timelineRail: {
     position: 'absolute',
@@ -589,16 +761,16 @@ const styles = StyleSheet.create({
   },
   timelineSide: { flex: 1, minHeight: 30, justifyContent: 'center' },
   minuteBubble: {
-    minWidth: 34,
-    height: 24,
-    paddingHorizontal: 6,
-    borderRadius: 12,
+    minWidth: 40,
+    height: 28,
+    paddingHorizontal: 8,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   minuteText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
     fontFamily: fonts.data,
@@ -617,5 +789,19 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: radii.btn,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  syncBtn: {
+    height: 48,
+    borderRadius: radii.btn,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing[3],
+  },
+  syncBtnText: {
+    color: '#00201C',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    fontFamily: fonts.bodyBold,
   },
 });

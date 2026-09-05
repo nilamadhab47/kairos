@@ -11,7 +11,6 @@ import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  CalendarEventRow,
   Countdown,
   EmptyState,
   ErrorState,
@@ -150,13 +149,21 @@ export default function TeamScreen() {
     [],
   );
 
+  // F1 sessions have no home/away teams — every race is a shared event and
+  // constructors participate collectively. Filtering by `entity=<team>` on
+  // /me/calendar returns nothing in that case. When the followed team is an
+  // F1 constructor, fall back to a sport-scoped fetch so the page shows the
+  // races the user's already tracking under this team's context.
+  const isF1Team = team?.sportId === 'f1';
   const cal = useQuery({
-    queryKey: ['team', teamId, 'history'],
-    queryFn: () =>
-      api<CalendarResponse>(
-        `/api/me/calendar?entity=${encodeURIComponent(teamId)}&from=${encodeURIComponent(rangeFrom)}&to=${encodeURIComponent(rangeTo)}`,
-      ),
-    enabled: Boolean(teamId),
+    queryKey: ['team', teamId, 'history', isF1Team ? 'sport:f1' : 'entity'],
+    queryFn: () => {
+      const params = new URLSearchParams({ from: rangeFrom, to: rangeTo });
+      if (isF1Team) params.set('sport', 'f1');
+      else params.set('entity', teamId);
+      return api<CalendarResponse>(`/api/me/calendar?${params.toString()}`);
+    },
+    enabled: Boolean(teamId) && (isF1Team || Boolean(team) || follows.isPending === false),
   });
 
   // Hero telemetry: standings row (rank / points / form / goal diff).
@@ -286,72 +293,139 @@ export default function TeamScreen() {
           </Pressable>
         </View>
 
-        <Animated.View entering={FadeInDown.duration(280)} style={styles.hero}>
-          {compChips.length > 0 ? (
-            <View style={styles.badgeRow}>
-              {compChips.map((comp) => {
-                const isActive = comp.id === activeCompId;
-                return (
-                  <Pressable
-                    key={comp.id}
-                    onPress={() => {
-                      if (comp.id === activeCompId) return;
-                      haptics.light();
-                      setSelectedCompId(comp.id);
-                    }}
-                    hitSlop={6}
-                    style={[
-                      styles.compBadge,
-                      {
-                        borderColor: isActive ? withAlpha(accent, 0.55) : theme.color.border,
-                        backgroundColor: isActive ? withAlpha(accent, 0.12) : 'transparent',
-                      },
-                    ]}
-                  >
-                    <Text
+        <Animated.View entering={FadeInDown.duration(280)} style={{ paddingHorizontal: spacing[4] }}>
+          <View
+            style={[
+              styles.heroCard,
+              { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border },
+            ]}
+          >
+            {/* Ambient glow at top — approximates the design's radial gradient. */}
+            <View
+              pointerEvents="none"
+              style={[
+                styles.heroGlow,
+                { backgroundColor: withAlpha(accent, 0.06) },
+              ]}
+            />
+
+            {compChips.length > 0 ? (
+              <View style={styles.badgeRow}>
+                {compChips.map((comp) => {
+                  const isActive = comp.id === activeCompId;
+                  return (
+                    <Pressable
+                      key={comp.id}
+                      onPress={() => {
+                        if (comp.id === activeCompId) return;
+                        haptics.light();
+                        setSelectedCompId(comp.id);
+                      }}
+                      hitSlop={6}
                       style={[
-                        styles.compBadgeText,
-                        { color: isActive ? accent : theme.color.textMuted },
+                        styles.compBadge,
+                        {
+                          borderColor: isActive ? withAlpha(accent, 0.55) : theme.color.border,
+                          backgroundColor: isActive
+                            ? withAlpha(accent, 0.14)
+                            : theme.color.surface,
+                        },
                       ]}
-                      numberOfLines={1}
                     >
-                      {comp.name.toUpperCase()}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                      <Text
+                        style={[
+                          styles.compBadgeText,
+                          { color: isActive ? accent : theme.color.textMuted },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {comp.name.toUpperCase()}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            {/* Crest halo lockup */}
+            {/* Layered dark tile lockup (Stitch): elevated grey ring, no neon. */}
+            <View
+              style={[
+                styles.crestHalo,
+                { backgroundColor: theme.color.bgElevated, borderColor: theme.color.border },
+              ]}
+            >
+              <View
+                style={[
+                  styles.crestWrap,
+                  { borderColor: theme.color.border, backgroundColor: theme.color.surface },
+                ]}
+              >
+                <TeamCrest
+                  name={displayName}
+                  logoUrl={team?.logoUrl ?? null}
+                  size={72}
+                  accentColor={accent}
+                />
+              </View>
             </View>
-          ) : null}
-          <View style={[styles.crestWrap, { borderColor: withAlpha(accent, 0.5) }]}>
-            <TeamCrest name={displayName} logoUrl={team?.logoUrl ?? null} size={72} accentColor={accent} />
-          </View>
-          <Text style={[styles.title, { color: theme.color.text }]} numberOfLines={2}>
-            {displayName}
-          </Text>
-          <Text style={[styles.subtitleLine, { color: theme.color.textMuted }]} numberOfLines={1}>
-            {[
-              standing ? `${standing.competitionName} ${formatSeason(standing.season)}` : (team?.sportLabel ?? params.sport ?? ''),
-              summary.data?.team.country ?? null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </Text>
-          <View style={styles.metaRow}>
-            <View style={[styles.pill, { borderColor: theme.color.border }]}>
-              <Text style={[styles.pillText, { color: theme.color.textMuted }]}>
-                {(() => {
-                  const rCount = filteredResultDays.reduce((n, d) => n + d.matches.length, 0);
-                  const uCount = filteredUpcomingDays.reduce((n, d) => n + d.matches.length, 0);
-                  const total = rCount + uCount;
-                  if (total === 0) return 'No recent matches';
-                  return [
-                    rCount ? `${rCount} result${rCount === 1 ? '' : 's'}` : null,
-                    uCount ? `${uCount} upcoming` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ');
-                })()}
-              </Text>
+
+            <Text style={[styles.title, { color: theme.color.text }]} numberOfLines={2}>
+              {displayName}
+            </Text>
+            <Text
+              style={[styles.subtitleLine, { color: theme.color.textMuted }]}
+              numberOfLines={1}
+            >
+              {[
+                standing
+                  ? `${standing.competitionName} ${formatSeason(standing.season)}`
+                  : (team?.sportLabel ?? params.sport ?? ''),
+                summary.data?.team.country ?? null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
+
+            {/* Feed status pill row */}
+            <View
+              style={[
+                styles.feedRow,
+                { backgroundColor: theme.color.surface, borderColor: theme.color.border },
+              ]}
+            >
+              <View style={styles.feedItem}>
+                <View style={[styles.feedDot, { backgroundColor: accent }]} />
+                <Text style={[styles.feedText, { color: theme.color.text }]}>OFFICIAL FEED</Text>
+              </View>
+              <Text style={[styles.feedDivider, { color: theme.color.textFaint }]}>•</Text>
+              <View style={styles.feedItem}>
+                <View
+                  style={[styles.feedDot, { backgroundColor: theme.color.textMuted }]}
+                />
+                <Text style={[styles.feedText, { color: theme.color.text }]}>
+                  AUTO-SYNCED CALENDAR
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.metaRow}>
+              <View style={[styles.pill, { borderColor: theme.color.border }]}>
+                <Text style={[styles.pillText, { color: theme.color.textMuted }]}>
+                  {(() => {
+                    const rCount = filteredResultDays.reduce((n, d) => n + d.matches.length, 0);
+                    const uCount = filteredUpcomingDays.reduce((n, d) => n + d.matches.length, 0);
+                    const total = rCount + uCount;
+                    if (total === 0) return 'No recent matches';
+                    return [
+                      rCount ? `${rCount} result${rCount === 1 ? '' : 's'}` : null,
+                      uCount ? `${uCount} upcoming` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ');
+                  })()}
+                </Text>
+              </View>
             </View>
           </View>
         </Animated.View>
@@ -467,7 +541,9 @@ export default function TeamScreen() {
             title="Nothing on the sheet"
             description={
               cal.data?.empty?.message ??
-              `${displayName} has no recent results or upcoming fixtures in this window.`
+              (isF1Team
+                ? 'No F1 sessions in this window. Follow the Formula 1 category on the Explore tab to pull in every race weekend.'
+                : `${displayName} has no recent results or upcoming fixtures in this window.`)
             }
           />
         ) : view === 'upcoming' ? (
@@ -475,33 +551,51 @@ export default function TeamScreen() {
             {nextMatch ? (
               <>
                 <View style={styles.nextHeaderRow}>
-                  <Text style={[styles.sectionLabel, { color: accent, marginBottom: 0 }]}>
-                    ● NEXT FIXTURE
-                  </Text>
+                  <View style={styles.sectionHeaderInner}>
+                    <View style={[styles.sectionAccentBar, { backgroundColor: accent }]} />
+                    <Text style={[styles.sectionLabel, { color: theme.color.text, marginBottom: 0 }]}>
+                      NEXT FIXTURE
+                    </Text>
+                  </View>
                   <Countdown startsAt={nextMatch.startsAt} variant="phrase" soonAccent={accent} size="sm" />
                 </View>
                 <NextMatchCard
                   match={nextMatch}
                   accent={accent}
                   tz={cal.data?.timezone}
+                  teamId={teamId}
+                  homeStanding={standing}
                   onPress={() => openEvent(matchToEvent(nextMatch), cal.data?.timezone)}
                 />
               </>
             ) : null}
             {laterUpcoming.length > 0 ? (
               <>
-                <Text style={[styles.sectionLabel, { color: theme.color.textFaint }]}>
-                  LATER THIS SEASON
-                </Text>
-                {laterUpcoming.map((day, di) => (
-                  <DayBlock
-                    key={`u-${day.date}`}
-                    day={day}
-                    di={di}
-                    tz={cal.data?.timezone}
-                    onOpen={(m) => openEvent(matchToEvent(m), cal.data?.timezone)}
-                  />
-                ))}
+                <View style={styles.sectionHeaderInner}>
+                  <View style={[styles.sectionAccentBar, { backgroundColor: withAlpha(accent, 0.5) }]} />
+                  <Text style={[styles.sectionLabel, { color: theme.color.text, marginBottom: 0 }]}>
+                    LATER THIS SEASON
+                  </Text>
+                </View>
+                <View style={{ gap: spacing[2] }}>
+                  {laterUpcoming
+                    .flatMap((day) => day.matches)
+                    .map((m, idx) => (
+                      <Animated.View
+                        key={`u-${m.id}`}
+                        entering={FadeInUp.delay(Math.min(idx, 6) * 40).duration(220)}
+                      >
+                        <UpcomingFixtureRow
+                          match={m}
+                          teamId={teamId}
+                          accent={accent}
+                          tz={cal.data?.timezone}
+                          showComp={!activeCompName}
+                          onPress={() => openEvent(matchToEvent(m), cal.data?.timezone)}
+                        />
+                      </Animated.View>
+                    ))}
+                </View>
               </>
             ) : null}
             {!nextMatch && laterUpcoming.length === 0 ? (
@@ -515,18 +609,64 @@ export default function TeamScreen() {
           <View style={styles.list}>
             {filteredResultDays.length > 0 ? (
               <>
-                <Text style={[styles.sectionLabel, { color: theme.color.textFaint }]}>
-                  RECENT MATCHES · LAST {Math.min(filteredResultDays.reduce((n, d) => n + d.matches.length, 0), 99)} LOGGED
-                </Text>
-                {filteredResultDays.map((day, di) => (
-                  <DayBlock
-                    key={`r-${day.date}`}
-                    day={day}
-                    di={di}
-                    tz={cal.data?.timezone}
-                    onOpen={(m) => openEvent(matchToEvent(m), cal.data?.timezone)}
-                  />
+                <SeasonRecordBanner
+                  days={filteredResultDays}
+                  teamId={teamId}
+                  accent={accent}
+                  compLabel={activeComp?.name ?? null}
+                />
+                <View style={styles.resultsHeaderRow}>
+                  <View style={[styles.sectionHeaderInner, { flex: 1, minWidth: 0 }]}>
+                    <View style={[styles.sectionAccentBar, { backgroundColor: accent }]} />
+                    <Text
+                      style={[
+                        styles.sectionLabel,
+                        { color: theme.color.text, marginBottom: 0, flexShrink: 1 },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      MATCH LOGS
+                    </Text>
+                  </View>
+                  <Text
+                    style={[styles.resultsHeaderMeta, { color: theme.color.textFaint }]}
+                    numberOfLines={1}
+                  >
+                    NEWEST FIRST
+                  </Text>
+                </View>
+                {flattenNewestFirst(filteredResultDays).map((m, idx) => (
+                  <Animated.View
+                    key={`r-${m.id}`}
+                    entering={FadeInUp.delay(Math.min(idx, 6) * 40).duration(220)}
+                  >
+                    <ResultLogCard
+                      match={m}
+                      teamId={teamId}
+                      accent={accent}
+                      tz={cal.data?.timezone}
+                      onPress={() => openEvent(matchToEvent(m), cal.data?.timezone)}
+                    />
+                  </Animated.View>
                 ))}
+                <Pressable
+                  onPress={() => {
+                    haptics.light();
+                    router.push('/settings/calendar');
+                  }}
+                  style={({ pressed }) => [
+                    styles.exportBtn,
+                    {
+                      backgroundColor: theme.color.surface,
+                      borderColor: theme.color.border,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.exportBtnText, { color: theme.color.textMuted }]}>
+                    ⬇  EXPORT SEASON LOG (.ICS)
+                  </Text>
+                </Pressable>
               </>
             ) : (
               <EmptyState
@@ -572,62 +712,6 @@ function splitHistory(days: CalendarDay[]): {
   }
   resultDays.reverse();
   return { resultDays, upcomingDays, resultCount, upcomingCount };
-}
-
-function DayBlock({
-  day,
-  di,
-  tz,
-  onOpen,
-}: {
-  day: CalendarDay;
-  di: number;
-  tz?: string;
-  onOpen: (m: FeedMatch) => void;
-}) {
-  return (
-    <Animated.View
-      entering={FadeInUp.delay(40 * di).duration(240)}
-      style={styles.daySection}
-    >
-      <DayHeader date={day.date} tz={tz} />
-      <View style={{ gap: spacing[2] }}>
-        {day.matches.map((m) => (
-          <CalendarEventRow key={m.id} match={m} timezone={tz} onPress={() => onOpen(m)} />
-        ))}
-      </View>
-    </Animated.View>
-  );
-}
-
-function DayHeader({ date, tz }: { date: string; tz?: string }) {
-  const theme = useTheme();
-  const label = formatDayHeader(date, tz);
-  return (
-    <View style={styles.dayHeader}>
-      <Text style={[styles.dayLabel, { color: theme.color.text }]}>{label.title}</Text>
-      <Text style={[styles.dayMeta, { color: theme.color.textFaint }]}>{label.meta}</Text>
-    </View>
-  );
-}
-
-function formatDayHeader(ymd: string, _tz?: string): { title: string; meta: string } {
-  const [y, m, d] = ymd.split('-').map(Number);
-  const local = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0));
-  const todayYmd = new Date().toISOString().slice(0, 10);
-  const tomorrowYmd = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  let title = local.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-  });
-  if (ymd === todayYmd) title = 'Today';
-  else if (ymd === tomorrowYmd) title = 'Tomorrow';
-  const meta = local.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  });
-  return { title, meta: title === meta ? '' : meta };
 }
 
 function withAlpha(hex: string, a: number): string {
@@ -722,11 +806,15 @@ function NextMatchCard({
   match,
   accent,
   tz,
+  teamId,
+  homeStanding,
   onPress,
 }: {
   match: FeedMatch;
   accent: string;
   tz?: string;
+  teamId: string;
+  homeStanding: TeamStanding | null;
   onPress: () => void;
 }) {
   const theme = useTheme();
@@ -737,6 +825,15 @@ function NextMatchCard({
     day: 'numeric',
   });
 
+  // Tag which side the followed team is on. We only know the followed team's
+  // rank (from homeStanding) — the opponent's tag stays empty.
+  const followedIsHome = match.homeTeam?.id === teamId;
+  const followedIsAway = match.awayTeam?.id === teamId;
+  const rankLabel =
+    homeStanding?.position != null ? `${homeStanding.position}${ordinal(homeStanding.position)}` : null;
+  const homeTag = followedIsHome && rankLabel ? `HOME (${rankLabel})` : 'HOME';
+  const awayTag = followedIsAway && rankLabel ? `AWAY (${rankLabel})` : 'AWAY';
+
   return (
     <Pressable
       onPress={() => {
@@ -746,59 +843,107 @@ function NextMatchCard({
       style={({ pressed }) => [
         nextStyles.card,
         {
-          backgroundColor: theme.color.surface,
+          backgroundColor: theme.color.bgSunken,
           borderColor: withAlpha(accent, 0.35),
           transform: [{ scale: pressed ? 0.985 : 1 }],
         },
       ]}
     >
       <View style={[nextStyles.accent, { backgroundColor: accent }]} />
+
+      {/* Badges row */}
       <View style={nextStyles.headerRow}>
-        <Text style={[nextStyles.comp, { color: accent }]} numberOfLines={1}>
-          {match.competition.label.toUpperCase()}
-        </Text>
-        {match.round ? (
-          <Text style={[nextStyles.round, { color: theme.color.textFaint }]} numberOfLines={1}>
-            {match.round.toUpperCase()}
-          </Text>
-        ) : null}
+        <View style={nextStyles.badgeGroup}>
+          <View
+            style={[
+              nextStyles.compPill,
+              { backgroundColor: theme.color.surface, borderColor: withAlpha(accent, 0.35) },
+            ]}
+          >
+            <Text style={[nextStyles.compPillText, { color: accent }]} numberOfLines={1}>
+              {match.competition.label.toUpperCase()}
+            </Text>
+          </View>
+          {displayRound(match.round) ? (
+            <View
+              style={[
+                nextStyles.roundPill,
+                { backgroundColor: theme.color.surface, borderColor: theme.color.border },
+              ]}
+            >
+              <Text
+                style={[nextStyles.roundPillText, { color: theme.color.textMuted }]}
+                numberOfLines={1}
+              >
+                {displayRound(match.round)!.toUpperCase()}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
+      {/* Face-off */}
       <View style={nextStyles.vsRow}>
         <View style={nextStyles.teamCol}>
           <TeamCrest
             name={match.homeTeam?.name ?? '—'}
             logoUrl={match.homeTeam?.logoUrl ?? undefined}
-            size={56}
+            size={52}
             accentColor={accent}
           />
           <Text style={[nextStyles.teamName, { color: theme.color.text }]} numberOfLines={1}>
             {match.homeTeam?.shortName ?? match.homeTeam?.name ?? '—'}
           </Text>
-          <Text style={[nextStyles.homeAway, { color: theme.color.textFaint }]}>HOME</Text>
+          <Text
+            style={[
+              nextStyles.homeAway,
+              { color: followedIsHome ? accent : theme.color.textFaint },
+            ]}
+            numberOfLines={1}
+          >
+            {homeTag}
+          </Text>
         </View>
         <View style={nextStyles.centerCol}>
           <Text style={[nextStyles.vs, { color: theme.color.textFaint }]}>VS</Text>
-          <Text style={[nextStyles.kickoff, { color: theme.color.text }]}>{kickoff}</Text>
-          <Text style={[nextStyles.kickoffDate, { color: theme.color.textMuted }]}>{dateLabel}</Text>
+          <View
+            style={[
+              nextStyles.timePill,
+              { backgroundColor: theme.color.surface, borderColor: theme.color.border },
+            ]}
+          >
+            <Text style={[nextStyles.timePillText, { color: theme.color.text }]}>{kickoff}</Text>
+          </View>
+          <Text style={[nextStyles.kickoffDate, { color: theme.color.textMuted }]}>
+            {dateLabel}
+          </Text>
         </View>
         <View style={nextStyles.teamCol}>
           <TeamCrest
             name={match.awayTeam?.name ?? '—'}
             logoUrl={match.awayTeam?.logoUrl ?? undefined}
-            size={56}
+            size={52}
             accentColor={accent}
           />
           <Text style={[nextStyles.teamName, { color: theme.color.text }]} numberOfLines={1}>
             {match.awayTeam?.shortName ?? match.awayTeam?.name ?? '—'}
           </Text>
-          <Text style={[nextStyles.homeAway, { color: theme.color.textFaint }]}>AWAY</Text>
+          <Text
+            style={[
+              nextStyles.homeAway,
+              { color: followedIsAway ? accent : theme.color.textFaint },
+            ]}
+            numberOfLines={1}
+          >
+            {awayTag}
+          </Text>
         </View>
       </View>
 
+      {/* Meta strip */}
       {match.venue ? (
-        <View style={[nextStyles.venueRow, { borderTopColor: theme.color.border }]}>
-          <Text style={[nextStyles.venueText, { color: theme.color.textMuted }]} numberOfLines={1}>
+        <View style={[nextStyles.metaStrip, { backgroundColor: theme.color.surface }]}>
+          <Text style={[nextStyles.metaText, { color: theme.color.textMuted }]} numberOfLines={1}>
             {match.venue}
           </Text>
         </View>
@@ -807,12 +952,610 @@ function NextMatchCard({
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Results & Log — Stitch-aligned                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Strip status strings that leak into the `round` field on older DB rows
+ * (e.g. "FULL TIME", "Final", "FT"). New writes are sanitised at ingest,
+ * but the results view still has to defend against legacy data.
+ */
+function displayRound(round: string | null): string | null {
+  if (!round) return null;
+  const s = round.trim().toLowerCase();
+  if (
+    s === '' ||
+    s === 'ft' ||
+    s === 'full time' ||
+    s === 'fulltime' ||
+    s === 'final' ||
+    s === 'finished' ||
+    s === 'completed' ||
+    s === 'complete' ||
+    s === 'ended' ||
+    s === 'in progress' ||
+    s === 'live' ||
+    s === 'ongoing' ||
+    s === 'scheduled' ||
+    s === 'postponed' ||
+    s === 'half time' ||
+    s === 'halftime' ||
+    s === 'ht'
+  ) {
+    return null;
+  }
+  return round;
+}
+
+function flattenNewestFirst(days: CalendarDay[]): FeedMatch[] {
+  // `days` already comes newest-first from the API; within a day sort by
+  // kickoff descending so the most recent match anchors the top.
+  const out: FeedMatch[] = [];
+  for (const day of days) {
+    const sorted = [...day.matches].sort(
+      (a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime(),
+    );
+    out.push(...sorted);
+  }
+  return out;
+}
+
+type Outcome = 'W' | 'D' | 'L' | 'U';
+
+function outcomeFor(match: FeedMatch, teamId: string): Outcome {
+  const h = match.score.home;
+  const a = match.score.away;
+  if (h == null || a == null) return 'U';
+  const isHome = match.homeTeam?.id === teamId;
+  const isAway = match.awayTeam?.id === teamId;
+  if (!isHome && !isAway) return 'U';
+  const my = isHome ? h : a;
+  const other = isHome ? a : h;
+  if (my > other) return 'W';
+  if (my < other) return 'L';
+  return 'D';
+}
+
+function SeasonRecordBanner({
+  days,
+  teamId,
+  accent,
+  compLabel,
+}: {
+  days: CalendarDay[];
+  teamId: string;
+  accent: string;
+  compLabel: string | null;
+}) {
+  const theme = useTheme();
+  const stats = useMemo(() => {
+    let w = 0,
+      d = 0,
+      l = 0,
+      gf = 0,
+      ga = 0,
+      cs = 0,
+      n = 0;
+    for (const day of days) {
+      for (const m of day.matches) {
+        const outcome = outcomeFor(m, teamId);
+        if (outcome === 'U') continue;
+        n += 1;
+        if (outcome === 'W') w += 1;
+        else if (outcome === 'D') d += 1;
+        else if (outcome === 'L') l += 1;
+        const isHome = m.homeTeam?.id === teamId;
+        const my = isHome ? (m.score.home ?? 0) : (m.score.away ?? 0);
+        const other = isHome ? (m.score.away ?? 0) : (m.score.home ?? 0);
+        gf += my;
+        ga += other;
+        if (other === 0) cs += 1;
+      }
+    }
+    const winRate = n > 0 ? Math.round((w / n) * 100) : 0;
+    return { w, d, l, gf, ga, cs, n, winRate };
+  }, [days, teamId]);
+
+  if (stats.n === 0) return null;
+  return (
+    <View
+      style={[
+        seasonStyles.card,
+        { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border },
+      ]}
+    >
+      <View style={[seasonStyles.accent, { backgroundColor: accent }]} />
+      <View style={{ flex: 1 }}>
+        <View style={seasonStyles.headline}>
+          <Text style={[seasonStyles.record, { color: theme.color.text }]}>
+            {stats.w}W - {stats.d}D - {stats.l}L
+          </Text>
+          <View
+            style={[seasonStyles.rateBadge, { backgroundColor: withAlpha(accent, 0.18) }]}
+          >
+            <Text style={[seasonStyles.rateBadgeText, { color: accent }]}>
+              {stats.winRate}% WIN RATE
+            </Text>
+          </View>
+        </View>
+        <Text style={[seasonStyles.subtitle, { color: theme.color.textMuted }]}>
+          {compLabel ? `${compLabel} · ` : 'All Comps · '}Across {stats.n} fixture
+          {stats.n === 1 ? '' : 's'}
+        </Text>
+      </View>
+      <View style={seasonStyles.rightCol}>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={[seasonStyles.rightValue, { color: accent }]}>{stats.gf}</Text>
+          <Text style={[seasonStyles.rightLabel, { color: theme.color.textFaint }]}>SCORED</Text>
+        </View>
+        <View style={[seasonStyles.rightDivider, { backgroundColor: theme.color.border }]} />
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={[seasonStyles.rightValue, { color: theme.color.text }]}>{stats.cs}</Text>
+          <Text style={[seasonStyles.rightLabel, { color: theme.color.textFaint }]}>
+            CLEAN SHEETS
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const seasonStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    borderRadius: radii.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  accent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
+  headline: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], flexWrap: 'wrap' },
+  record: { fontSize: 18, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.2 },
+  rateBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  rateBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8, fontFamily: fonts.bodyBold },
+  subtitle: { fontSize: 12, fontWeight: '500', marginTop: 4, fontFamily: fonts.bodyMedium },
+  rightCol: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
+  rightValue: { fontSize: 16, fontWeight: '800', fontFamily: fonts.data, fontVariant: ['tabular-nums'] },
+  rightLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginTop: 1,
+    fontFamily: fonts.bodyBold,
+  },
+  rightDivider: { width: StyleSheet.hairlineWidth, height: 26 },
+});
+
+/**
+ * Opponent-centric upcoming fixture row for the "Later this season" list.
+ * Mirrors the Stitch secondary-fixture card: crest + "vs Opponent" +
+ * home/away & venue on the left, stacked date/time on the right.
+ */
+function UpcomingFixtureRow({
+  match,
+  teamId,
+  accent,
+  tz,
+  showComp,
+  onPress,
+}: {
+  match: FeedMatch;
+  teamId: string;
+  accent: string;
+  tz?: string;
+  showComp: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const isHome = match.homeTeam?.id === teamId;
+  const opponent = isHome ? match.awayTeam : match.homeTeam;
+
+  const dateLabel = new Date(match.startsAt)
+    .toLocaleDateString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: tz,
+    })
+    .toUpperCase();
+  const timeLabel = formatLocalTime(match.startsAt, tz);
+
+  const subtitleParts = [
+    isHome ? 'Home' : 'Away',
+    showComp ? match.competition.label : null,
+    match.venue,
+  ].filter(Boolean) as string[];
+
+  return (
+    <Pressable
+      onPress={() => {
+        haptics.light();
+        onPress();
+      }}
+      style={[
+        upcomingStyles.card,
+        { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border },
+      ]}
+    >
+      <View style={[upcomingStyles.stripe, { backgroundColor: withAlpha(accent, 0.45) }]} />
+      <View style={upcomingStyles.row}>
+        <View
+          style={[
+            upcomingStyles.crestTile,
+            { backgroundColor: theme.color.surface, borderColor: theme.color.border },
+          ]}
+        >
+          <TeamCrest
+            name={opponent?.name ?? '—'}
+            logoUrl={opponent?.logoUrl ?? undefined}
+            size={30}
+            accentColor={null}
+          />
+        </View>
+        <View style={upcomingStyles.middle}>
+          <View style={upcomingStyles.titleRow}>
+            <Text style={[upcomingStyles.vsPrefix, { color: theme.color.textFaint }]}>vs</Text>
+            <Text
+              style={[upcomingStyles.opponent, { color: theme.color.text }]}
+              numberOfLines={1}
+            >
+              {opponent?.shortName ?? opponent?.name ?? 'TBC'}
+            </Text>
+          </View>
+          <Text
+            style={[upcomingStyles.subtitle, { color: theme.color.textMuted }]}
+            numberOfLines={1}
+          >
+            {subtitleParts.join(' · ')}
+          </Text>
+        </View>
+        <View style={upcomingStyles.right}>
+          <Text style={[upcomingStyles.date, { color: theme.color.text }]} numberOfLines={1}>
+            {dateLabel}
+          </Text>
+          <Text style={[upcomingStyles.time, { color: accent }]} numberOfLines={1}>
+            {timeLabel}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+const upcomingStyles = StyleSheet.create({
+  card: {
+    borderRadius: radii.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[4],
+  },
+  stripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
+  crestTile: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  middle: { flex: 1, minWidth: 0, gap: 3 },
+  titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  vsPrefix: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    fontFamily: fonts.bodyBold,
+  },
+  opponent: {
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: fonts.bodyBold,
+    flexShrink: 1,
+  },
+  subtitle: { fontSize: 11, fontWeight: '500', fontFamily: fonts.bodyMedium },
+  right: { alignItems: 'flex-end', gap: 3 },
+  date: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    fontFamily: fonts.data,
+  },
+  time: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    fontFamily: fonts.display,
+  },
+});
+
+function ResultLogCard({
+  match,
+  teamId,
+  accent,
+  tz,
+  onPress,
+}: {
+  match: FeedMatch;
+  teamId: string;
+  accent: string;
+  tz?: string;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const outcome = outcomeFor(match, teamId);
+  const stripeColor =
+    outcome === 'W'
+      ? accent
+      : outcome === 'L'
+        ? '#EF4444'
+        : outcome === 'D'
+          ? theme.color.border
+          : withAlpha(accent, 0.4);
+
+  const scoreH = match.score.home ?? 0;
+  const scoreA = match.score.away ?? 0;
+  const scoreTint =
+    outcome === 'W'
+      ? withAlpha(accent, 0.18)
+      : outcome === 'L'
+        ? withAlpha('#EF4444', 0.16)
+        : theme.color.bgSunken;
+  const scoreFg =
+    outcome === 'W' ? accent : outcome === 'L' ? '#EF4444' : theme.color.text;
+
+  const isHome = match.homeTeam?.id === teamId;
+  const cleanSheet =
+    outcome === 'W' && ((isHome && scoreA === 0) || (!isHome && scoreH === 0));
+
+  const badgeLabel =
+    outcome === 'W'
+      ? cleanSheet
+        ? 'W · CLEAN SHEET'
+        : 'W +3 PTS'
+      : outcome === 'D'
+        ? 'D +1 PT'
+        : outcome === 'L'
+          ? 'L · 0 PTS'
+          : '—';
+  const badgeBg =
+    outcome === 'W'
+      ? accent
+      : outcome === 'L'
+        ? withAlpha('#EF4444', 0.18)
+        : theme.color.surface;
+  const badgeFg =
+    outcome === 'W' ? '#00201C' : outcome === 'L' ? '#EF4444' : theme.color.text;
+
+  const subtitle =
+    outcome === 'W'
+      ? isHome
+        ? 'HOME WIN'
+        : 'AWAY WIN'
+      : outcome === 'D'
+        ? isHome
+          ? 'HOME POINT'
+          : 'AWAY POINT'
+        : outcome === 'L'
+          ? isHome
+            ? 'HOME LOSS'
+            : 'AWAY LOSS'
+          : '';
+
+  const dateLabel = new Date(match.startsAt).toLocaleDateString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    timeZone: tz,
+  });
+
+  return (
+    <Pressable
+      onPress={() => {
+        haptics.select();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        resultStyles.card,
+        {
+          backgroundColor: theme.color.bgSunken,
+          borderColor: theme.color.border,
+          transform: [{ scale: pressed ? 0.99 : 1 }],
+        },
+      ]}
+    >
+      <View style={[resultStyles.stripe, { backgroundColor: stripeColor }]} />
+
+      {/* Top meta row */}
+      <View style={resultStyles.topRow}>
+        <View style={resultStyles.topLeft}>
+          <View
+            style={[
+              resultStyles.compPill,
+              { backgroundColor: theme.color.surface, borderColor: withAlpha(accent, 0.35) },
+            ]}
+          >
+            <Text style={[resultStyles.compPillText, { color: accent }]} numberOfLines={1}>
+              {match.competition.label.toUpperCase()}
+            </Text>
+          </View>
+          {displayRound(match.round) ? (
+            <Text
+              style={[resultStyles.roundText, { color: theme.color.textMuted }]}
+              numberOfLines={1}
+            >
+              {displayRound(match.round)!.toUpperCase()}
+            </Text>
+          ) : null}
+        </View>
+        <Text style={[resultStyles.dateText, { color: theme.color.textFaint }]}>{dateLabel}</Text>
+      </View>
+
+      {/* Middle: score tile + teams + result badge */}
+      <View style={resultStyles.midRow}>
+        <View style={[resultStyles.scoreTile, { backgroundColor: scoreTint }]}>
+          <Text style={[resultStyles.scoreFt, { color: scoreFg }]}>FT</Text>
+          <Text style={[resultStyles.scoreLine, { color: scoreFg }]}>
+            {scoreH}-{scoreA}
+          </Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={resultStyles.teamsRow}>
+            <Text
+              style={[
+                resultStyles.teamName,
+                {
+                  color: isHome ? theme.color.text : theme.color.textMuted,
+                  fontFamily: isHome ? fonts.bodyBold : fonts.bodySemiBold,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {match.homeTeam?.shortName ?? match.homeTeam?.name ?? '—'}
+            </Text>
+            <Text style={[resultStyles.vs, { color: theme.color.textFaint }]}>vs</Text>
+            <Text
+              style={[
+                resultStyles.teamName,
+                {
+                  color: !isHome ? theme.color.text : theme.color.textMuted,
+                  fontFamily: !isHome ? fonts.bodyBold : fonts.bodySemiBold,
+                  flex: 1,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {match.awayTeam?.shortName ?? match.awayTeam?.name ?? '—'}
+            </Text>
+          </View>
+          {match.venue ? (
+            <Text style={[resultStyles.venue, { color: theme.color.textMuted }]} numberOfLines={1}>
+              {match.venue}
+            </Text>
+          ) : null}
+        </View>
+        <View style={resultStyles.badgeCol}>
+          <View style={[resultStyles.resultBadge, { backgroundColor: badgeBg }]}>
+            <Text style={[resultStyles.resultBadgeText, { color: badgeFg }]} numberOfLines={1}>
+              {badgeLabel}
+            </Text>
+          </View>
+          {subtitle ? (
+            <Text
+              style={[
+                resultStyles.badgeSubtitle,
+                {
+                  color:
+                    outcome === 'W'
+                      ? accent
+                      : outcome === 'L'
+                        ? '#EF4444'
+                        : theme.color.textMuted,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+const resultStyles = StyleSheet.create({
+  card: {
+    borderRadius: radii.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
+    gap: spacing[3],
+    overflow: 'hidden',
+  },
+  stripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[2],
+  },
+  topLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], flexShrink: 1 },
+  compPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  compPillText: { fontSize: 10, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.bodyBold },
+  roundText: { fontSize: 10, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.data },
+  dateText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, fontFamily: fonts.data },
+  midRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+  },
+  scoreTile: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreFt: { fontSize: 9, fontWeight: '800', letterSpacing: 0.8, fontFamily: fonts.bodyBold },
+  scoreLine: {
+    fontSize: 14,
+    fontWeight: '800',
+    fontFamily: fonts.display,
+    fontVariant: ['tabular-nums'],
+    marginTop: 1,
+  },
+  teamsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  teamName: { fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  vs: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
+  venue: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 3,
+    fontFamily: fonts.bodyMedium,
+  },
+  badgeCol: { alignItems: 'flex-end', gap: 4, maxWidth: 120 },
+  resultBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  resultBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    fontFamily: fonts.bodyBold,
+  },
+  badgeSubtitle: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    fontFamily: fonts.bodyBold,
+  },
+});
+
 const nextStyles = StyleSheet.create({
   card: {
     borderRadius: radii.card,
     borderWidth: 1,
     padding: spacing[5],
     overflow: 'hidden',
+    gap: spacing[3],
   },
   accent: {
     position: 'absolute',
@@ -825,26 +1568,77 @@ const nextStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing[3],
-    marginBottom: spacing[4],
+    gap: spacing[2],
   },
-  comp: { fontSize: 11, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.bodyBold, flexShrink: 1 },
-  round: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, fontFamily: fonts.bodyBold },
-  vsRow: { flexDirection: 'row', alignItems: 'center' },
+  badgeGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flexShrink: 1,
+  },
+  compPill: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  compPillText: { fontSize: 10, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.bodyBold },
+  roundPill: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  roundPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    fontFamily: fonts.bodyBold,
+  },
+  vsRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing[1] },
   teamCol: { flex: 1, alignItems: 'center', gap: spacing[2] },
-  centerCol: { alignItems: 'center', paddingHorizontal: spacing[3], gap: 2 },
-  vs: { fontSize: 13, fontWeight: '700', letterSpacing: 2, fontFamily: fonts.data },
-  kickoff: { fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'], fontFamily: fonts.display },
-  kickoffDate: { fontSize: 11, fontWeight: '600', letterSpacing: 0.4, fontFamily: fonts.data },
-  teamName: { fontSize: 14, fontWeight: '600', textAlign: 'center', fontFamily: fonts.bodySemiBold, maxWidth: 110 },
-  homeAway: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, fontFamily: fonts.bodyBold },
-  venueRow: {
-    marginTop: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
+  centerCol: { alignItems: 'center', paddingHorizontal: spacing[3], gap: spacing[1] },
+  vs: { fontSize: 18, fontWeight: '700', letterSpacing: 2, fontFamily: fonts.display },
+  timePill: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  timePillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    fontFamily: fonts.data,
+  },
+  kickoffDate: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    fontFamily: fonts.bodyBold,
+    marginTop: 2,
+  },
+  teamName: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    fontFamily: fonts.bodySemiBold,
+    maxWidth: 110,
+  },
+  homeAway: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    fontFamily: fonts.bodyBold,
+  },
+  metaStrip: {
+    marginTop: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: radii.btn,
     alignItems: 'center',
   },
-  venueText: { fontSize: 12, fontWeight: '500', fontFamily: fonts.bodyMedium },
+  metaText: { fontSize: 12, fontWeight: '500', fontFamily: fonts.bodyMedium },
 });
 
 /* -------------------------------------------------------------------------- */
@@ -866,6 +1660,86 @@ const styles = StyleSheet.create({
     paddingTop: spacing[3],
     paddingBottom: spacing[5],
     gap: spacing[2],
+  },
+  heroCard: {
+    borderRadius: radii.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing[5],
+    paddingTop: spacing[4],
+    paddingBottom: spacing[5],
+    alignItems: 'center',
+    gap: spacing[2],
+    overflow: 'hidden',
+    marginTop: spacing[2],
+  },
+  heroGlow: {
+    position: 'absolute',
+    top: -48,
+    left: -40,
+    right: -40,
+    height: 160,
+    borderRadius: 999,
+    opacity: 0.7,
+  },
+  crestHalo: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing[1],
+    marginBottom: spacing[2],
+  },
+  feedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: radii.btn,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing[3],
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  feedItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  feedDot: { width: 6, height: 6, borderRadius: 3 },
+  feedText: { fontSize: 10, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.bodyBold },
+  feedDivider: { fontSize: 12, fontWeight: '700' },
+  sectionHeaderInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flexShrink: 1,
+  },
+  sectionAccentBar: { width: 4, height: 14, borderRadius: 2 },
+  resultsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[2],
+    marginBottom: -spacing[2],
+  },
+  resultsHeaderMeta: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    fontFamily: fonts.bodyBold,
+  },
+  exportBtn: {
+    alignSelf: 'center',
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    borderRadius: radii.btn,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing[2],
+  },
+  exportBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    fontFamily: fonts.bodyBold,
   },
   crestWrap: {
     width: 96,

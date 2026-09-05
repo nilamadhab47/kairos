@@ -9,11 +9,17 @@ type Props = {
   accentColor?: string | null;
 };
 
-/** Round crest with fallback initials + optional team-color ring. */
+/**
+ * Round crest with fallback initials.
+ *
+ * Stitch "Obsidian Precision" treatment: the crest sits in a layered dark
+ * circular tile (elevated surface + hairline edge) instead of a coloured
+ * ring. When an accentColor is supplied it is used only as a whisper-faint
+ * tint on the border so team identity reads without neon halos.
+ */
 export function TeamCrest({ name, logoUrl, size = 40, accentColor }: Props) {
   const theme = useTheme();
   const initials = toInitials(name);
-  const ringWidth = accentColor ? 2 : StyleSheet.hairlineWidth;
 
   return (
     <View
@@ -23,8 +29,8 @@ export function TeamCrest({ name, logoUrl, size = 40, accentColor }: Props) {
           width: size,
           height: size,
           borderRadius: radii.pill,
-          borderColor: accentColor ?? theme.color.border,
-          borderWidth: ringWidth,
+          borderColor: accentColor ? withAlpha(accentColor, 0.22) : theme.color.border,
+          borderWidth: StyleSheet.hairlineWidth,
           backgroundColor: theme.color.bgElevated,
         },
       ]}
@@ -52,6 +58,15 @@ export function TeamCrest({ name, logoUrl, size = 40, accentColor }: Props) {
       )}
     </View>
   );
+}
+
+function withAlpha(hex: string, a: number): string {
+  const c = hex.replace('#', '');
+  if (c.length !== 6) return hex;
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
 }
 
 function toInitials(name: string): string {

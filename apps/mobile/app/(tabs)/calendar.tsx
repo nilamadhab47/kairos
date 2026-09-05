@@ -17,7 +17,6 @@ import {
   ErrorState,
   EventCard,
   Screen,
-  SectionHeader,
   SegmentedToggle,
   SkeletonCard,
   SportIcon,
@@ -92,6 +91,8 @@ export default function CalendarScreen() {
   const [sportFilter, setSportFilter] = useState<string | null>(null);
   const [compFilter, setCompFilter] = useState<string | null>(null);
   const [teamFilter, setTeamFilter] = useState<string | null>(null);
+  // Stitch date-strip: tap a day cell to focus just that day, tap again to clear.
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   const range = useMemo(() => monthWindow(monthCursor), [monthCursor]);
 
@@ -155,6 +156,17 @@ export default function CalendarScreen() {
     haptics.select();
   };
 
+  const setMonthSafely = (updater: (c: Date) => Date) => {
+    setMonthCursor(updater);
+    setSelectedDay(null);
+  };
+
+  const todayYmd = ymdInTzLocal(new Date(), tz);
+  const visibleDays = useMemo(() => {
+    const days = data?.days ?? [];
+    return selectedDay ? days.filter((d) => d.date === selectedDay) : days;
+  }, [data, selectedDay]);
+
   /* --------------------------- render -------------------------- */
 
   return (
@@ -172,14 +184,11 @@ export default function CalendarScreen() {
           />
         }
       >
-        {/* --- Page title + month nav + view switcher --- */}
+        {/* --- Page title + month nav + view switcher (Stitch header) --- */}
         <Animated.View entering={FadeInDown.duration(260)} style={styles.header}>
           <View style={styles.titleTopRow}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.eyebrow, { color: theme.color.textFaint }]}>Calendar</Text>
-              <Text style={[styles.title, { color: theme.color.text }]}>
-                {monthLabel(monthCursor)}
-              </Text>
             </View>
             <SegmentedToggle
               options={VIEW_OPTIONS}
@@ -189,35 +198,67 @@ export default function CalendarScreen() {
             />
           </View>
 
-          <View style={styles.navRow}>
-            <NavArrow
-              direction="prev"
-              onPress={() => setMonthCursor((c) => addMonths(c, -1))}
-            />
-            <NavArrow
-              direction="next"
-              onPress={() => setMonthCursor((c) => addMonths(c, 1))}
-            />
-            {!cursorIsThisMonth ? (
+          {/* ‹ SEPTEMBER 2026 › cluster + TODAY pill */}
+          <View style={styles.monthRow}>
+            <NavArrow direction="prev" onPress={() => setMonthSafely((c) => addMonths(c, -1))} />
+            <View style={styles.monthLabelWrap}>
+              <Text style={[styles.title, { color: theme.color.text }]} numberOfLines={1}>
+                {monthNameOf(monthCursor).toUpperCase()}
+              </Text>
+              <Text style={[styles.yearLabel, { color: theme.color.accent }]}>
+                {monthCursor.getFullYear()}
+              </Text>
+            </View>
+            <NavArrow direction="next" onPress={() => setMonthSafely((c) => addMonths(c, 1))} />
+            <View style={{ flex: 1 }} />
+            {!cursorIsThisMonth || selectedDay ? (
               <Pressable
                 onPress={() => {
                   haptics.light();
                   setMonthCursor(startOfMonth(new Date()));
+                  setSelectedDay(null);
                 }}
-                style={[styles.todayPill, { borderColor: theme.color.border }]}
+                style={[
+                  styles.todayPill,
+                  { borderColor: theme.color.border, backgroundColor: theme.color.bgElevated },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Jump to current month"
               >
-                <Text style={[styles.todayPillText, { color: theme.color.text }]}>Today</Text>
+                <View style={[styles.todayDot, { backgroundColor: theme.color.accent }]} />
+                <Text style={[styles.todayPillText, { color: theme.color.text }]}>TODAY</Text>
               </Pressable>
-            ) : null}
-            <View style={{ flex: 1 }} />
-            <Text style={[styles.rangeCount, { color: theme.color.textMuted }]}>
-              {eventCount === 0
-                ? 'No events'
-                : `${eventCount} ${eventCount === 1 ? 'event' : 'events'}`}
-            </Text>
+            ) : (
+              <Text style={[styles.rangeCount, { color: theme.color.textMuted }]}>
+                {eventCount === 0
+                  ? 'No events'
+                  : `${eventCount} ${eventCount === 1 ? 'event' : 'events'}`}
+              </Text>
+            )}
           </View>
+
+          {/* Date strip carousel — one cell per day with fixtures */}
+          {(data?.days.length ?? 0) > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.dateStrip}
+              style={{ marginTop: spacing[3] }}
+            >
+              {(data?.days ?? []).map((day) => (
+                <DayCell
+                  key={day.date}
+                  day={day}
+                  isToday={day.date === todayYmd}
+                  selected={selectedDay === day.date}
+                  onPress={() => {
+                    haptics.light();
+                    setSelectedDay((cur) => (cur === day.date ? null : day.date));
+                  }}
+                />
+              ))}
+            </ScrollView>
+          ) : null}
         </Animated.View>
 
         {/* --- Sticky filter bar --- */}
@@ -285,13 +326,13 @@ export default function CalendarScreen() {
           />
         ) : view === 'cards' ? (
           <CardsBody
-            days={data?.days ?? []}
+            days={visibleDays}
             tz={tz}
             onOpen={(m) => openEvent(matchToEvent(m), tz)}
           />
         ) : (
           <ListBody
-            days={data?.days ?? []}
+            days={visibleDays}
             tz={tz}
             onOpen={(m) => openEvent(matchToEvent(m), tz)}
           />
@@ -384,6 +425,74 @@ function ListBody({
 }
 
 /* -------------------------------------------------------------------------- */
+/*  DayCell — Stitch date-strip carousel cell                                 */
+/* -------------------------------------------------------------------------- */
+
+function DayCell({
+  day,
+  isToday,
+  selected,
+  onPress,
+}: {
+  day: CalendarDay;
+  isToday: boolean;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const dayNum = day.date.slice(8, 10);
+  const [y, m, d] = day.date.split('-').map(Number);
+  const weekday = new Date(Date.UTC(y!, (m ?? 1) - 1, d ?? 1, 12))
+    .toLocaleDateString(undefined, { weekday: 'short' })
+    .toUpperCase();
+  // Sport-coloured event dots, deduped, max 3 — like the mockup's strip.
+  const sportIds = [...new Set(day.matches.map((x) => x.sportId))].slice(0, 3);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Show fixtures on ${day.date}`}
+      style={[
+        styles.dayCell,
+        {
+          backgroundColor: selected ? theme.color.bgElevated : theme.color.bgSunken,
+          borderColor: selected
+            ? withAlpha(theme.color.accent, 0.5)
+            : isToday
+              ? withAlpha(theme.color.accent, 0.3)
+              : theme.color.border,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.dayCellWeekday,
+          { color: selected || isToday ? theme.color.accent : theme.color.textFaint },
+        ]}
+      >
+        {weekday}
+      </Text>
+      <Text style={[styles.dayCellNum, { color: theme.color.text }]}>{dayNum}</Text>
+      <View style={styles.dayCellDots}>
+        {sportIds.map((sid) => (
+          <View
+            key={sid}
+            style={[
+              styles.dayCellDot,
+              { backgroundColor: theme.sport[sid as SportKey] ?? theme.color.accent },
+            ]}
+          />
+        ))}
+      </View>
+      {selected ? (
+        <View style={[styles.dayCellBar, { backgroundColor: theme.color.accent }]} />
+      ) : null}
+    </Pressable>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*  DaySection — shared date header wrapper                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -399,16 +508,41 @@ function DaySection({
   children: React.ReactNode;
 }) {
   const theme = useTheme();
+  const isToday = date === ymdInTzLocal(new Date(), tz);
   return (
     <View style={styles.daySection}>
-      <SectionHeader
-        title={formatDayLabel(date, tz)}
-        trailing={
-          <Text style={[styles.dayCount, { color: theme.color.textFaint }]}>
-            {count} {count === 1 ? 'event' : 'events'}
+      <View style={styles.dayHeaderRow}>
+        <View style={styles.dayHeaderLeft}>
+          <View
+            style={[
+              styles.dayHeaderDot,
+              { backgroundColor: isToday ? theme.color.accent : theme.color.textFaint },
+            ]}
+          />
+          <Text style={[styles.dayHeaderTitle, { color: theme.color.text }]} numberOfLines={1}>
+            {formatDayLabel(date, tz).toUpperCase()}
           </Text>
-        }
-      />
+        </View>
+        <View
+          style={[
+            styles.dayCountPill,
+            {
+              backgroundColor: theme.color.bgElevated,
+              borderColor: isToday ? withAlpha(theme.color.accent, 0.4) : theme.color.border,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.dayCount,
+              { color: isToday ? theme.color.accent : theme.color.textMuted },
+            ]}
+          >
+            {isToday ? 'TODAY · ' : ''}
+            {count} {count === 1 ? 'EVENT' : 'EVENTS'}
+          </Text>
+        </View>
+      </View>
       {children}
     </View>
   );
@@ -615,8 +749,8 @@ function monthWindow(cursor: Date): { from: Date; to: Date } {
 function sameMonth(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 }
-function monthLabel(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+function monthNameOf(d: Date): string {
+  return d.toLocaleDateString(undefined, { month: 'long' });
 }
 function formatDayLabel(ymd: string, tz: string | undefined): string {
   const [y, m, d] = ymd.split('-').map(Number);
@@ -672,28 +806,77 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   title: {
-    fontSize: 30,
+    fontSize: 24,
     fontWeight: '700',
-    letterSpacing: -0.4,
-    marginTop: spacing[1],
+    letterSpacing: -0.2,
     fontFamily: fonts.display,
   },
-  navRow: {
+  monthRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
     marginTop: spacing[3],
   },
+  monthLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing[2],
+    paddingHorizontal: spacing[1],
+    flexShrink: 1,
+  },
+  yearLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: fonts.data,
+    fontVariant: ['tabular-nums'],
+  },
   todayPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: spacing[3],
     height: 32,
-    alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radii.pill,
     borderWidth: StyleSheet.hairlineWidth,
     marginLeft: spacing[1],
   },
-  todayPillText: { fontSize: 12, fontWeight: '600', letterSpacing: 0.4 },
+  todayDot: { width: 7, height: 7, borderRadius: 4 },
+  todayPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  dateStrip: {
+    gap: spacing[2],
+    paddingRight: spacing[5],
+  },
+  dayCell: {
+    width: 54,
+    height: 72,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    overflow: 'hidden',
+  },
+  dayCellWeekday: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  dayCellNum: {
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: fonts.display,
+    fontVariant: ['tabular-nums'],
+  },
+  dayCellDots: { flexDirection: 'row', gap: 3, height: 5 },
+  dayCellDot: { width: 5, height: 5, borderRadius: 3 },
+  dayCellBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 3,
+  },
   navBtn: {
     width: 36,
     height: 32,
@@ -749,8 +932,37 @@ const styles = StyleSheet.create({
     gap: spacing[2],
     paddingHorizontal: spacing[5],
   },
+  dayHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[3],
+    paddingHorizontal: spacing[5],
+    marginBottom: spacing[3],
+  },
+  dayHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flex: 1,
+    minWidth: 0,
+  },
+  dayHeaderDot: { width: 8, height: 8, borderRadius: 4 },
+  dayHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    fontFamily: fonts.display,
+    flexShrink: 1,
+  },
+  dayCountPill: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   dayCount: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.8,
     fontVariant: ['tabular-nums'],

@@ -8,12 +8,11 @@ import {
   ErrorState,
   EventCard,
   Screen,
-  SectionHeader,
   SkeletonCard,
   useEventDetail,
   YourTeamsStrip,
 } from '@/components';
-import { fonts, haptics, spacing, useTheme } from '@/design';
+import { fonts, haptics, radii, spacing, useTheme, type SportKey } from '@/design';
 import { api } from '@/lib/api';
 import { matchToEvent, type FeedMatch } from '@/lib/feed';
 import { greeting, useNow } from '@/lib/time';
@@ -107,9 +106,27 @@ export default function TodayScreen() {
         }
       >
         <Animated.View entering={FadeInDown.duration(280)} style={styles.header}>
-          <Text style={[styles.eyebrow, { color: theme.color.textFaint }]}>
-            {greeting(now, tz)}
-          </Text>
+          <View style={styles.eyebrowRow}>
+            <Text style={[styles.eyebrow, { color: theme.color.textFaint }]}>
+              {greeting(now, tz)}
+            </Text>
+            {(data?.live.length ?? 0) > 0 ? (
+              <View
+                style={[
+                  styles.headerLivePill,
+                  {
+                    backgroundColor: withAlpha(theme.color.live, 0.14),
+                    borderColor: withAlpha(theme.color.live, 0.4),
+                  },
+                ]}
+              >
+                <View style={[styles.liveDot, { backgroundColor: theme.color.live }]} />
+                <Text style={[styles.headerLiveText, { color: theme.color.live }]}>
+                  {data!.live.length} LIVE
+                </Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={[styles.title, { color: theme.color.text }]}>Today</Text>
           <Text style={[styles.subtitle, { color: theme.color.textMuted }]}>
             {subtitleFor(query.status, totalToday, dateLabel)}
@@ -148,14 +165,7 @@ export default function TodayScreen() {
               </Text>
             </View>
             <View>
-              <SectionHeader
-                title="Coming up"
-                trailing={
-                  <Text style={[styles.groupCount, { color: theme.color.textFaint }]}>
-                    {data.upcoming.length}
-                  </Text>
-                }
-              />
+              <FeedSectionHead label="Coming up" count={data.upcoming.length} />
               <View style={styles.list}>
                 {data.upcoming.map((m, i) => (
                   <Animated.View
@@ -177,7 +187,7 @@ export default function TodayScreen() {
           <>
             {data && data.nextUp.length > 0 ? (
               <View>
-                <SectionHeader title="Next up" />
+                <FeedSectionHead label="Next up" />
                 <View style={styles.list}>
                   {data.nextUp.map((m, i) => (
                     <Animated.View
@@ -198,17 +208,7 @@ export default function TodayScreen() {
 
             {data && data.live.length > 0 ? (
               <View>
-                <SectionHeader
-                  title="Live now"
-                  trailing={
-                    <View style={styles.livePulse}>
-                      <View style={[styles.liveDot, { backgroundColor: theme.color.live }]} />
-                      <Text style={[styles.liveCount, { color: theme.color.live }]}>
-                        {data.live.length}
-                      </Text>
-                    </View>
-                  }
-                />
+                <FeedSectionHead label="Live now" count={data.live.length} live />
                 <View style={styles.list}>
                   {data.live.map((m, i) => (
                     <Animated.View
@@ -237,13 +237,10 @@ export default function TodayScreen() {
                   if (rest.length === 0) return null;
                   return (
                     <View key={group.sportId}>
-                      <SectionHeader
-                        title={group.sportLabel}
-                        trailing={
-                          <Text style={[styles.groupCount, { color: theme.color.textFaint }]}>
-                            {rest.length}
-                          </Text>
-                        }
+                      <FeedSectionHead
+                        label={group.sportLabel}
+                        count={rest.length}
+                        sportId={group.sportId}
                       />
                       <View style={styles.list}>
                         {rest.map((m, i) => (
@@ -271,8 +268,70 @@ export default function TodayScreen() {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  FeedSectionHead — Stitch section header: accent dot + caps title + pill   */
+/* -------------------------------------------------------------------------- */
+
+function FeedSectionHead({
+  label,
+  count,
+  live,
+  sportId,
+}: {
+  label: string;
+  count?: number;
+  live?: boolean;
+  sportId?: string;
+}) {
+  const theme = useTheme();
+  const dotColor = live
+    ? theme.color.live
+    : sportId
+      ? (theme.sport[sportId as SportKey] ?? theme.color.accent)
+      : theme.color.accent;
+  return (
+    <View style={styles.sectionHeadRow}>
+      <View style={styles.sectionHeadLeft}>
+        <View style={[styles.sectionHeadDot, { backgroundColor: dotColor }]} />
+        <Text style={[styles.sectionHeadTitle, { color: theme.color.text }]} numberOfLines={1}>
+          {label.toUpperCase()}
+        </Text>
+      </View>
+      {count != null ? (
+        <View
+          style={[
+            styles.sectionHeadPill,
+            {
+              backgroundColor: live ? withAlpha(theme.color.live, 0.14) : theme.color.bgElevated,
+              borderColor: live ? withAlpha(theme.color.live, 0.4) : theme.color.border,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.sectionHeadPillText,
+              { color: live ? theme.color.live : theme.color.textMuted },
+            ]}
+          >
+            {live ? `${count} LIVE` : `${count} ${count === 1 ? 'EVENT' : 'EVENTS'}`}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
+
+function withAlpha(hex: string, a: number): string {
+  const c = hex.replace('#', '');
+  if (c.length !== 6) return hex;
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
 
 function subtitleFor(status: string, count: number, dateLabel: string): string {
   if (status === 'pending') return 'Gathering your day…';
@@ -299,18 +358,62 @@ function formatDateLabel(iso: string | undefined, tz: string | undefined): strin
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing[12] },
   header: { paddingHorizontal: spacing[5], paddingTop: spacing[3] },
+  eyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[3],
+  },
   eyebrow: { fontSize: 12, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
+  headerLivePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing[3],
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  headerLiveText: { fontSize: 10, fontWeight: '800', letterSpacing: 1, fontFamily: fonts.bodyBold },
   title: { fontSize: 34, fontWeight: '700', letterSpacing: -0.6, marginTop: spacing[1], fontFamily: fonts.display },
   subtitle: { fontSize: 14, marginTop: spacing[1] },
   list: { gap: spacing[3], paddingHorizontal: spacing[5] },
   emptyLead: { fontSize: 14, lineHeight: 20 },
-  livePulse: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   liveDot: { width: 8, height: 8, borderRadius: 999 },
-  liveCount: { fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  groupCount: {
-    fontSize: 11,
+  sectionHeadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[3],
+    paddingHorizontal: spacing[5],
+    marginTop: spacing[6],
+    marginBottom: spacing[3],
+  },
+  sectionHeadLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flex: 1,
+    minWidth: 0,
+  },
+  sectionHeadDot: { width: 8, height: 8, borderRadius: 4 },
+  sectionHeadTitle: {
+    fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 0.6,
+    fontFamily: fonts.display,
+    flexShrink: 1,
+  },
+  sectionHeadPill: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  sectionHeadPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
     fontVariant: ['tabular-nums'],
   },
 });

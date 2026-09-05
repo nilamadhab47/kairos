@@ -37,11 +37,28 @@ export type FeedMatch = {
 };
 
 /**
+ * Some ingested rows carry status strings ("Full Time", "Scheduled", …)
+ * in the round column. Filter them out at the adapter layer so every
+ * screen (cards, list rows, detail sheet) shows a real round or nothing.
+ */
+export function cleanRound(round: string | null | undefined): string | null {
+  if (!round) return null;
+  const s = round.trim().toLowerCase();
+  const statusy = new Set([
+    '', 'ft', 'full time', 'fulltime', 'final', 'finished', 'completed',
+    'complete', 'ended', 'in progress', 'live', 'ongoing', 'scheduled',
+    'postponed', 'half time', 'halftime', 'ht',
+  ]);
+  return statusy.has(s) ? null : round;
+}
+
+/**
  * Adapt a `FeedMatch` from any /me/* endpoint into the shape `EventCard`
  * expects. Kept as a single function so a change to the card's contract
  * only needs updating in one place.
  */
 export function matchToEvent(m: FeedMatch): TodayEvent {
+  const round = cleanRound(m.round);
   return {
     id: m.id,
     category: m.sportId,
@@ -49,7 +66,7 @@ export function matchToEvent(m: FeedMatch): TodayEvent {
       m.homeTeam && m.awayTeam
         ? `${m.homeTeam.name} vs ${m.awayTeam.name}`
         : m.competition.label,
-    subtitle: [m.competition.label, m.round].filter(Boolean).join(' · '),
+    subtitle: [m.competition.label, round].filter(Boolean).join(' · '),
     startsAt: m.startsAt,
     status: m.status,
     metadata: {
@@ -62,7 +79,7 @@ export function matchToEvent(m: FeedMatch): TodayEvent {
         : undefined,
       score: m.score,
       venue: m.venue ?? undefined,
-      round: m.round ?? undefined,
+      round: round ?? undefined,
     },
   };
 }
