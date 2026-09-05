@@ -16,6 +16,13 @@ export { APIFootballProvider } from './api-football.js';
 export { ESPNProvider, ESPN_LEAGUES, ESPN_REMINDER_SOCCER_LEAGUES, espnDateString, parseEspnSoccerSummary } from './espn.js';
 export { FPLProvider, FPL_COMPETITION_NAME } from './fpl.js';
 export {
+  SportsrcProvider,
+  SPORTSRC_LEAGUES,
+  deriveFormFromResults,
+  type SportsrcLeagueCode,
+  type FinishedMatchLite,
+} from './sportsrc.js';
+export {
   UEFAProvider,
   UEFA_COMPETITIONS,
   canonicalUefaTeamName,

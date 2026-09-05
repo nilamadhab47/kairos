@@ -19,6 +19,8 @@ import {
   ESPNProvider,
   ESPN_REMINDER_SOCCER_LEAGUES,
   FPLProvider,
+  SportsrcProvider,
+  type SportsrcLeagueCode,
   findCompetitionIdByProvider,
   SportAPI7Provider,
   upsertMatches,
@@ -43,6 +45,8 @@ export const CURATED_FOOTBALL_LEAGUES: Array<{
   sportApi7SeasonId?: number;
   sportApi7SeasonName?: string;
   espnSlug?: string;
+  /** Sportsrc league code (football-data.org compatible) for standings. */
+  sportsrcCode?: SportsrcLeagueCode;
 }> = [
   {
     id: 39,
@@ -52,16 +56,18 @@ export const CURATED_FOOTBALL_LEAGUES: Array<{
     sportApi7SeasonId: 96668,
     sportApi7SeasonName: 'Premier League 26/27',
     espnSlug: 'eng.1',
+    sportsrcCode: 'PL',
   },
-  { id: 140, name: 'La Liga', tier: 1, sportApi7TournamentId: 8, espnSlug: 'esp.1' },
-  { id: 135, name: 'Serie A', tier: 1, sportApi7TournamentId: 23, espnSlug: 'ita.1' },
-  { id: 78, name: 'Bundesliga', tier: 1, sportApi7TournamentId: 35, espnSlug: 'ger.1' },
-  { id: 61, name: 'Ligue 1', tier: 1, sportApi7TournamentId: 34, espnSlug: 'fra.1' },
-  { id: 2, name: 'UEFA Champions League', tier: 1, sportApi7TournamentId: 7, espnSlug: 'uefa.champions' },
+  { id: 140, name: 'La Liga', tier: 1, sportApi7TournamentId: 8, espnSlug: 'esp.1', sportsrcCode: 'PD' },
+  { id: 135, name: 'Serie A', tier: 1, sportApi7TournamentId: 23, espnSlug: 'ita.1', sportsrcCode: 'SA' },
+  { id: 78, name: 'Bundesliga', tier: 1, sportApi7TournamentId: 35, espnSlug: 'ger.1', sportsrcCode: 'BL1' },
+  { id: 61, name: 'Ligue 1', tier: 1, sportApi7TournamentId: 34, espnSlug: 'fra.1', sportsrcCode: 'FL1' },
+  { id: 2, name: 'UEFA Champions League', tier: 1, sportApi7TournamentId: 7, espnSlug: 'uefa.champions', sportsrcCode: 'CL' },
   { id: 3, name: 'UEFA Europa League', tier: 2, sportApi7TournamentId: 679, espnSlug: 'uefa.europa' },
   { id: 253, name: 'Major League Soccer', tier: 2, sportApi7TournamentId: 242, espnSlug: 'usa.1' },
-  { id: 88, name: 'Eredivisie', tier: 2, sportApi7TournamentId: 37 },
+  { id: 88, name: 'Eredivisie', tier: 2, sportApi7TournamentId: 37, sportsrcCode: 'DED' },
   { id: 71, name: 'Brasileirão', tier: 2, sportApi7TournamentId: 325 },
+  { id: 94, name: 'Primeira Liga', tier: 2, sportApi7TournamentId: 238, espnSlug: 'por.1', sportsrcCode: 'PPL' },
   { id: 323, name: 'Indian Super League', tier: 3, sportApi7TournamentId: 1900, espnSlug: 'ind.1' },
 ];
 
@@ -88,6 +94,16 @@ export interface FplIngestResult {
   standings: { competitionId: string | null; rows: number } | null;
 }
 
+export interface SportsrcIngestResult {
+  standings: Array<{
+    league: SportsrcLeagueCode;
+    leagueName: string;
+    competitionId: string | null;
+    rows: number;
+    error?: string;
+  }>;
+}
+
 export interface IngestFootballResult {
   season: number;
   /** ESPN reminder window (today + upcoming months). */
@@ -100,6 +116,8 @@ export interface IngestFootballResult {
   };
   /** Official FPL data (Premier League only — authoritative scores + table). */
   fpl: FplIngestResult | null;
+  /** Sportsrc multi-league standings (PD, SA, BL1, FL1, CL, PPL, DED). */
+  sportsrc: SportsrcIngestResult | null;
   leagues: IngestFootballLeagueResult[];
   standings: Array<{
     leagueId: number;
@@ -299,6 +317,86 @@ export async function ingestFootballFixtures(opts?: {
     });
   }
 
+  // 1c) Sportsrc — free multi-league standings for La Liga, Serie A,
+  // Bundesliga, Ligue 1, UCL, Primeira Liga, Eredivisie. Skips PL because
+  // FPL is authoritative for it above.
+  let sportsrc: SportsrcIngestResult | null = null;
+  try {
+    const srcProvider = new SportsrcProvider();
+    const srcResults: SportsrcIngestResult['standings'] = [];
+    const targets = CURATED_FOOTBALL_LEAGUES.filter(
+      (l) => l.sportsrcCode && l.sportsrcCode !== 'PL',
+    );
+    for (const meta of targets) {
+      const code = meta.sportsrcCode!;
+      try {
+        const table = await srcProvider.fetchStandings({
+          sport: 'football',
+          competitionId: code,
+          season: seasonHint,
+        });
+        if (!table) {
+          srcResults.push({
+            league: code,
+            leagueName: meta.name,
+            competitionId: null,
+            rows: 0,
+            error: 'no standings returned',
+          });
+          continue;
+        }
+        const compId = await resolveDbCompetitionId({
+          apiFootballLeagueId: meta.id,
+          sportApi7TournamentId: meta.sportApi7TournamentId,
+          name: meta.name,
+          espnSlug: meta.espnSlug,
+        });
+        if (!compId) {
+          srcResults.push({
+            league: code,
+            leagueName: meta.name,
+            competitionId: null,
+            rows: 0,
+            error: 'competition not in DB yet',
+          });
+          continue;
+        }
+        const { rows } = await upsertStandings(compId, table.season, table);
+        srcResults.push({
+          league: code,
+          leagueName: meta.name,
+          competitionId: compId,
+          rows,
+        });
+      } catch (err) {
+        srcResults.push({
+          league: code,
+          leagueName: meta.name,
+          competitionId: null,
+          rows: 0,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        errors.push({
+          provider: `sportsrc:standings:${code}`,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    sportsrc = { standings: srcResults };
+    const okCount = srcResults.filter((r) => !r.error).length;
+    console.log(
+      `[sportsrc] Ingested standings for ${okCount}/${srcResults.length} leagues (${srcResults
+        .filter((r) => !r.error)
+        .map((r) => `${r.league}:${r.rows}`)
+        .join(', ')})`,
+    );
+  } catch (err) {
+    errors.push({
+      provider: 'sportsrc',
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   let ucl: IngestUclResult | null = null;
   if (!opts?.skipUcl) {
     try {
@@ -320,6 +418,7 @@ export async function ingestFootballFixtures(opts?: {
       season,
       fixtures: fixturesBatch,
       fpl,
+      sportsrc,
       leagues,
       standings: standingsResults,
       providerErrors: errors,
@@ -457,6 +556,7 @@ export async function ingestFootballFixtures(opts?: {
     season,
     fixtures: fixturesBatch,
     fpl,
+    sportsrc,
     leagues,
     standings: standingsResults,
     providerErrors: errors,

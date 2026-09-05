@@ -306,6 +306,37 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         orderBy: { standing: { lastSyncedAt: 'desc' } },
       });
 
+      // If we have a standings row but no form string, derive one from the
+      // team's own recent finished matches (pattern from dominberbel98's
+      // laliga_transform.py — folds results into a rolling window).
+      let derivedForm: string | null = null;
+      if (standingRow && !standingRow.form) {
+        const recent = await prisma.match.findMany({
+          where: {
+            sportId: 'football',
+            status: 'completed',
+            OR: [{ homeTeamId: id }, { awayTeamId: id }],
+            homeScore: { not: null },
+            awayScore: { not: null },
+          },
+          orderBy: { startsAt: 'desc' },
+          take: 5,
+          select: {
+            homeTeamId: true,
+            awayTeamId: true,
+            homeScore: true,
+            awayScore: true,
+          },
+        });
+        const letters = recent.map((m) => {
+          const isHome = m.homeTeamId === id;
+          const gf = isHome ? m.homeScore! : m.awayScore!;
+          const ga = isHome ? m.awayScore! : m.homeScore!;
+          return gf > ga ? 'W' : gf < ga ? 'L' : 'D';
+        });
+        if (letters.length > 0) derivedForm = letters.join('');
+      }
+
       return {
         team: {
           id: team.id,
@@ -333,7 +364,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
               goalsAgainst: standingRow.goalsAgainst,
               goalDifference: standingRow.goalDifference,
               points: standingRow.points,
-              form: standingRow.form,
+              form: standingRow.form ?? derivedForm,
               lastSyncedAt: standingRow.standing.lastSyncedAt.toISOString(),
             }
           : null,
