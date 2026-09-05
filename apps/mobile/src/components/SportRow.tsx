@@ -10,12 +10,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 import { SportIcon, type SportIconName } from './SportIcon';
-import { haptics, motion, radii, spacing, useTheme } from '@/design';
+import { fonts, haptics, motion, radii, spacing, useTheme } from '@/design';
 
 type Props = {
   iconName: SportIconName | string;
   label: string;
   hint?: string;
+  /** Small accent-colored pill next to the sport name (e.g. "Pitchside"). */
+  badge?: string;
   selected: boolean;
   disabled?: boolean;
   accentColor: string;
@@ -39,6 +41,7 @@ export function SportRow({
   iconName,
   label,
   hint,
+  badge,
   selected,
   disabled,
   accentColor,
@@ -108,17 +111,32 @@ export function SportRow({
         },
       ]}
     >
-      <View style={styles.iconWrap}>
+      {/* Leading-edge sport accent bar */}
+      <View style={[styles.accentBar, { backgroundColor: disabled ? theme.color.border : accentColor }]} />
+
+      <View
+        style={[
+          styles.iconWrap,
+          { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border },
+        ]}
+      >
         <SportIcon name={iconName} size={22} color={iconColor} />
       </View>
 
       <View style={styles.textCol}>
-        <Text
-          style={[styles.label, { color: disabled ? theme.color.textMuted : theme.color.text }]}
-          numberOfLines={1}
-        >
-          {label}
-        </Text>
+        <View style={styles.titleRow}>
+          <Text
+            style={[styles.label, { color: disabled ? theme.color.textMuted : theme.color.text }]}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+          {badge && !disabled ? (
+            <View style={[styles.tagPill, { backgroundColor: withAlpha(accentColor, 0.12) }]}>
+              <Text style={[styles.tagText, { color: accentColor }]}>{badge}</Text>
+            </View>
+          ) : null}
+        </View>
         {hint ? (
           <Text style={[styles.hint, { color: theme.color.textFaint }]} numberOfLines={1}>
             {hint}
@@ -175,23 +193,39 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 64,
+    minHeight: 76,
     borderRadius: radii.card,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingVertical: spacing[4],
     gap: spacing[3],
+    overflow: 'hidden',
+  },
+  accentBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radii.sm,
+    width: 48,
+    height: 48,
+    borderRadius: radii.btn,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  textCol: { flex: 1, gap: 2 },
-  label: { fontSize: 16, fontWeight: '600', letterSpacing: -0.1 },
-  hint: { fontSize: 12, letterSpacing: 0.1 },
+  textCol: { flex: 1, gap: 3 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
+  label: { fontSize: 17, fontWeight: '600', letterSpacing: -0.1, fontFamily: fonts.displayMedium },
+  tagPill: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  tagText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4, fontFamily: fonts.bodyBold },
+  hint: { fontSize: 12, letterSpacing: 0.1, fontFamily: fonts.body },
   check: {
     width: 22,
     height: 22,

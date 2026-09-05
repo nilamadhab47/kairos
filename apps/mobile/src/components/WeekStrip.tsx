@@ -6,7 +6,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { haptics, motion, radii, spacing, useTheme, type SportKey } from '@/design';
+import { fonts, haptics, motion, spacing, useTheme, type SportKey } from '@/design';
 
 export type DayCell = {
   /** YYYY-MM-DD in the target tz. */
@@ -74,13 +74,15 @@ function DayPill({
 
   const wrapStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+    backgroundColor: interpolateColor(
+      sel.value,
+      [0, 1],
+      ['transparent', theme.color.surfacePressed],
+    ),
+    borderColor: interpolateColor(sel.value, [0, 1], [theme.color.border, theme.color.borderStrong]),
   }));
-  const bubbleStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(sel.value, [0, 1], ['transparent', accent]),
-    borderColor: interpolateColor(sel.value, [0, 1], [theme.color.border, accent]),
-  }));
-  const numStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(sel.value, [0, 1], [theme.color.text, theme.color.onAccent]),
+  const stripeStyle = useAnimatedStyle(() => ({
+    opacity: sel.value,
   }));
 
   return (
@@ -91,27 +93,34 @@ function DayPill({
       accessibilityRole="button"
       accessibilityLabel={`${day.weekdayShort} ${day.dayNum}, ${day.count} events`}
       accessibilityState={{ selected }}
-      style={[styles.pill, wrapStyle]}
+      style={[styles.cell, wrapStyle]}
     >
       <Text
         style={[
           styles.weekday,
           {
-            color: day.isToday && !selected ? accent : theme.color.textMuted,
+            color: day.isToday ? accent : theme.color.textMuted,
           },
         ]}
       >
         {day.weekdayShort}
       </Text>
-      <Animated.View style={[styles.bubble, bubbleStyle]}>
-        <Animated.Text style={[styles.dayNum, numStyle]}>{day.dayNum}</Animated.Text>
-      </Animated.View>
+      <Text
+        style={[
+          styles.dayNum,
+          { color: selected ? theme.color.text : theme.color.textMuted },
+        ]}
+      >
+        {day.dayNum}
+      </Text>
       <View style={styles.dots}>
         {day.sports.slice(0, 3).map((s) => (
           <View key={s} style={[styles.dot, { backgroundColor: theme.sport[s] ?? accent }]} />
         ))}
         {day.sports.length === 0 ? <View style={styles.dotSpacer} /> : null}
       </View>
+      {/* Selected-day bottom stripe in the primary accent — design signature. */}
+      <Animated.View style={[styles.stripe, { backgroundColor: accent }, stripeStyle]} />
     </AnimatedPressable>
   );
 }
@@ -121,25 +130,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: spacing[4],
-    gap: 4,
+    gap: 5,
   },
-  pill: {
+  // Design spec: date cells ~52x70, radius 12, filled when selected with an
+  // accent bottom stripe.
+  cell: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: spacing[2],
-    gap: 6,
-    borderRadius: radii.card,
-  },
-  weekday: { fontSize: 11, fontWeight: '700', letterSpacing: 1.1 },
-  bubble: {
-    width: 36,
-    height: 36,
-    borderRadius: 999,
-    alignItems: 'center',
     justifyContent: 'center',
+    height: 70,
+    gap: 5,
+    borderRadius: 12,
     borderWidth: 1,
+    overflow: 'hidden',
   },
-  dayNum: { fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  weekday: { fontSize: 10, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.bodyBold },
+  dayNum: {
+    fontSize: 17,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    fontFamily: fonts.display,
+  },
   dots: {
     flexDirection: 'row',
     gap: 3,
@@ -148,4 +159,13 @@ const styles = StyleSheet.create({
   },
   dot: { width: 5, height: 5, borderRadius: 999 },
   dotSpacer: { height: 5 },
+  stripe: {
+    position: 'absolute',
+    bottom: 0,
+    left: 10,
+    right: 10,
+    height: 3,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+  },
 });

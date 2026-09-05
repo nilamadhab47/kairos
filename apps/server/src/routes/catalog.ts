@@ -266,6 +266,82 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   );
 
   app.get(
+    '/api/catalog/teams/:id/summary',
+    {
+      schema: {
+        tags: ['catalog'],
+        summary:
+          'Team hero summary: competitions, latest league standings row (rank, points, form, goal diff). Real ingested data only.',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string' } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const team = await prisma.team.findUnique({
+        where: { id },
+        include: {
+          competitions: {
+            include: { competition: { select: { id: true, name: true, format: true, season: true } } },
+          },
+        },
+      });
+      if (!team) return reply.code(404).send({ error: 'not_found' });
+
+      // Latest standings row for this team — prefer league-format competitions
+      // (a cup has no meaningful table position).
+      const standingRow = await prisma.standingRow.findFirst({
+        where: {
+          teamId: id,
+          standing: { competition: { format: 'league' } },
+        },
+        include: {
+          standing: {
+            include: { competition: { select: { name: true } } },
+          },
+        },
+        orderBy: { standing: { lastSyncedAt: 'desc' } },
+      });
+
+      return {
+        team: {
+          id: team.id,
+          name: team.name,
+          shortName: team.shortName,
+          logoUrl: team.logoUrl,
+          country: team.country,
+        },
+        competitions: team.competitions.map((tc) => ({
+          id: tc.competition.id,
+          name: tc.competition.name,
+          format: tc.competition.format,
+          season: tc.competition.season,
+        })),
+        standing: standingRow
+          ? {
+              competitionName: standingRow.standing.competition.name,
+              season: standingRow.standing.season,
+              position: standingRow.position,
+              played: standingRow.played,
+              won: standingRow.won,
+              drawn: standingRow.drawn,
+              lost: standingRow.lost,
+              goalsFor: standingRow.goalsFor,
+              goalsAgainst: standingRow.goalsAgainst,
+              goalDifference: standingRow.goalDifference,
+              points: standingRow.points,
+              form: standingRow.form,
+              lastSyncedAt: standingRow.standing.lastSyncedAt.toISOString(),
+            }
+          : null,
+      };
+    },
+  );
+
+  app.get(
     '/api/catalog/entities',
     {
       schema: {

@@ -48,13 +48,20 @@ type CatalogResponse = { sports: CatalogSport[] };
  * competitions in this screen; we describe *scope* rather than fabricate names.
  */
 const HINTS: Record<string, string> = {
-  football: 'Leagues, cups & clubs',
-  cricket: 'International sides you follow',
-  f1: 'Race weekends · pick constructors or follow all',
+  football: 'Premier League, UCL, La Liga, Serie A',
+  cricket: 'IPL, ICC World Cup, The Ashes, BBL',
+  f1: 'All Grand Prix weekends & testing',
   tennis: 'Grand Slams · ATP · WTA',
   basketball: 'NBA & internationals',
   hockey: 'NHL & internationals',
   baseball: 'MLB & internationals',
+};
+
+/** Design-language badges per sport — Obsidian Precision naming. */
+const BADGES: Record<string, string> = {
+  football: 'Pitchside',
+  cricket: 'Telemetry',
+  f1: 'Paddock',
 };
 
 const ICONS: Record<string, SportIconName> = {
@@ -236,6 +243,7 @@ export default function SportsOnboarding() {
                   iconName={ICONS[sport.category] ?? 'default'}
                   label={sport.label}
                   hint={HINTS[sport.category] ?? undefined}
+                  badge={BADGES[sport.category] ?? undefined}
                   selected={selected.has(sport.category)}
                   disabled={sport.status === 'unavailable'}
                   accentColor={

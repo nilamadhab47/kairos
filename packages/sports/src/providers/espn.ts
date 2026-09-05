@@ -197,7 +197,7 @@ function eventToMatch(
     status,
     score: { home: Number.isFinite(homeScore) ? homeScore : null, away: Number.isFinite(awayScore) ? awayScore : null },
     venue: comp.venue?.fullName,
-    round: null, // ESPN status.type.description is the match state, not matchday
+    round: undefined, // ESPN status.type.description is the match state, not matchday
     metadata: {
       shortName: ev.shortName,
       shortDetail: comp.status?.type?.shortDetail,

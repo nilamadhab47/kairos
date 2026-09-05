@@ -269,30 +269,55 @@ function SheetBody({
             { backgroundColor: theme.color.bgSunken, borderColor: theme.color.border, marginTop: spacing[4] },
           ]}
         >
-          <Text style={[styles.countdownLabel, { color: theme.color.textFaint, marginBottom: spacing[1] }]}>
-            KEY MOMENTS
-          </Text>
-          {moments.map((m) => (
-            <View key={m.id} style={styles.momentRow}>
-              <Text style={[styles.momentMin, { color: theme.color.textFaint }]}>
-                {m.minute != null ? `${m.minute}'` : '—'}
-              </Text>
-              <Text style={styles.momentIcon}>{momentGlyph(m)}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.momentPlayer, { color: theme.color.text }]} numberOfLines={1}>
-                  {m.playerName ?? momentFallback(m.type)}
-                </Text>
-                <Text style={[styles.momentMeta, { color: theme.color.textMuted }]} numberOfLines={1}>
-                  {[
-                    m.team === 'away' ? meta.awayTeam?.name : meta.homeTeam?.name,
-                    momentLabel(m),
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>
-              </View>
-            </View>
-          ))}
+          <View style={styles.dynamicsHeader}>
+            <Text style={[styles.countdownLabel, { color: theme.color.text, fontSize: 15, letterSpacing: 0 }]}>
+              Match Dynamics
+            </Text>
+            <Text style={[styles.dynamicsTag, { color: accent }]}>
+              {state === 'live' ? 'LIVE CHRONOLOGY' : 'FULL CHRONOLOGY'}
+            </Text>
+          </View>
+          <View style={styles.timeline}>
+            <View style={[styles.timelineRail, { backgroundColor: theme.color.border }]} />
+            {moments.map((m) => {
+              const isAway = m.team === 'away';
+              return (
+                <View key={m.id} style={styles.timelineRow}>
+                  {/* Home side (left) */}
+                  <View style={[styles.timelineSide, { alignItems: 'flex-end', opacity: isAway ? 0 : 1 }]}>
+                    {!isAway ? (
+                      <MomentEntry
+                        m={m}
+                        align="right"
+                        teamName={meta.homeTeam?.name}
+                      />
+                    ) : null}
+                  </View>
+                  {/* Minute bubble on the rail */}
+                  <View
+                    style={[
+                      styles.minuteBubble,
+                      { backgroundColor: theme.color.surface, borderColor: theme.color.border },
+                    ]}
+                  >
+                    <Text style={[styles.minuteText, { color: theme.color.textMuted }]}>
+                      {m.minute != null ? `${m.minute}'` : '—'}
+                    </Text>
+                  </View>
+                  {/* Away side (right) */}
+                  <View style={[styles.timelineSide, { alignItems: 'flex-start', opacity: isAway ? 1 : 0 }]}>
+                    {isAway ? (
+                      <MomentEntry
+                        m={m}
+                        align="left"
+                        teamName={meta.awayTeam?.name}
+                      />
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
         </View>
       ) : null}
 
@@ -332,6 +357,51 @@ function SheetBody({
         </Pressable>
       </View>
     </BottomSheetScrollView>
+  );
+}
+
+/** One side of the Match Dynamics timeline — glyph, player, event label. */
+function MomentEntry({
+  m,
+  align,
+  teamName,
+}: {
+  m: MatchMoment;
+  align: 'left' | 'right';
+  teamName?: string;
+}) {
+  const theme = useTheme();
+  const textAlign = align === 'right' ? 'right' : 'left';
+  return (
+    <View style={{ maxWidth: 132 }}>
+      <View
+        style={{
+          flexDirection: align === 'right' ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        <Text style={{ fontSize: 12 }}>{momentGlyph(m)}</Text>
+        <Text
+          style={{
+            color: theme.color.text,
+            fontSize: 12,
+            fontWeight: '600',
+            textAlign,
+            flexShrink: 1,
+          }}
+          numberOfLines={1}
+        >
+          {m.playerName ?? momentFallback(m.type)}
+        </Text>
+      </View>
+      <Text
+        style={{ color: theme.color.textMuted, fontSize: 10, fontWeight: '600', letterSpacing: 0.3, textAlign }}
+        numberOfLines={1}
+      >
+        {[momentLabel(m), teamName].filter(Boolean).join(' · ').toUpperCase()}
+      </Text>
+    </View>
   );
 }
 
@@ -497,6 +567,42 @@ const styles = StyleSheet.create({
   momentIcon: { fontSize: 14, width: 22, textAlign: 'center' },
   momentPlayer: { fontSize: 14, fontWeight: '600' },
   momentMeta: { fontSize: 12, fontWeight: '500', marginTop: 1 },
+  dynamicsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing[2],
+  },
+  dynamicsTag: { fontSize: 10, fontWeight: '700', letterSpacing: 1, fontFamily: fonts.bodyBold },
+  timeline: { position: 'relative', gap: spacing[3], paddingVertical: spacing[2] },
+  timelineRail: {
+    position: 'absolute',
+    left: '50%',
+    top: 0,
+    bottom: 0,
+    width: StyleSheet.hairlineWidth,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  timelineSide: { flex: 1, minHeight: 30, justifyContent: 'center' },
+  minuteBubble: {
+    minWidth: 34,
+    height: 24,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  minuteText: {
+    fontSize: 10,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    fontFamily: fonts.data,
+  },
   actions: {
     flexDirection: 'row',
     gap: spacing[3],
