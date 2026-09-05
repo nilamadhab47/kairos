@@ -165,8 +165,8 @@ export default function TeamsOnboarding() {
   /**
    * When the user picked competitions, group teams under each comp's
    * SectionHeader so it's obvious that Arsenal lives in the EPL and
-   * Barça lives in La Liga. Teams appearing in multiple comps show up
-   * in each — makes finding them by mental hierarchy much faster.
+   * Barça lives in La Liga. Teams appearing in multiple comps are
+   * deduped — they show only in the first section they appear in.
    *
    * When no comps are picked, fall back to a single ungrouped list.
    */
@@ -186,14 +186,23 @@ export default function TeamsOnboarding() {
       }
       return flat.length ? [{ key: '__all__', title: '', logoUrl: null, teams: flat }] : [];
     }
+
+    // Deduplicate teams across competition sections — a team shows only
+    // in the first section it belongs to (typically the domestic league).
+    const seen = new Set<string>();
     return compsForActive.map((compId, idx) => {
       const meta = compsMetaById.get(compId);
       const q = teamQueries[idx];
+      const uniqueTeams = (q?.data?.teams ?? []).filter((t) => {
+        if (seen.has(t.id)) return false;
+        seen.add(t.id);
+        return true;
+      });
       return {
         key: compId,
         title: meta?.displayName ?? 'Teams',
         logoUrl: meta?.logoUrl ?? null,
-        teams: q?.data?.teams ?? [],
+        teams: uniqueTeams,
       };
     });
   }, [compsForActive, teamQueries, compsMetaById]);

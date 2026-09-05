@@ -24,6 +24,83 @@ import {
 } from '@kairo/core';
 import type { NormalizedMatch, NormalizedStandings, NormalizedMatchEvent, ProviderRef, SportId } from './types.js';
 
+// ── Round sanitizer ────────────────────────────────────────────────
+// Some providers (ESPN) accidentally put the match status into the `round`
+// field ("Full Time", "Scheduled", "Halftime"). Strip those and prefer the
+// existing DB value when the incoming one is garbage.
+const STATUS_ROUND_STRINGS = new Set([
+  'full time', 'scheduled', 'halftime', 'half time', 'postponed',
+  'cancelled', 'canceled', 'abandoned', 'suspended', 'in progress',
+  'after extra time', 'after penalties', 'ended', 'final',
+]);
+
+function sanitizeRound(
+  incoming: string | null | undefined,
+  existing: string | null | undefined,
+): string | null {
+  if (incoming && STATUS_ROUND_STRINGS.has(incoming.toLowerCase().trim())) {
+    return (existing as string) ?? null;
+  }
+  return incoming ?? (existing as string) ?? null;
+}
+
+// ── Global team-name canonicalization ──────────────────────────────
+// Ensures all providers converge on a single name for the same club,
+// preventing duplicate Team rows (e.g. "Internazionale" vs "Inter Milan").
+const TEAM_CANONICAL: Record<string, string> = {
+  internazionale: 'Inter Milan',
+  inter: 'Inter Milan',
+  'inter milan': 'Inter Milan',
+  'fc internazionale milano': 'Inter Milan',
+  milan: 'AC Milan',
+  'ac milan': 'AC Milan',
+  paris: 'Paris Saint-Germain',
+  'paris saint-germain': 'Paris Saint-Germain',
+  'paris saint germain': 'Paris Saint-Germain',
+  psg: 'Paris Saint-Germain',
+  'bayern münchen': 'Bayern Munich',
+  'bayern munchen': 'Bayern Munich',
+  'bayern munich': 'Bayern Munich',
+  bayern: 'Bayern Munich',
+  atleti: 'Atletico Madrid',
+  'atlético': 'Atletico Madrid',
+  'atlético madrid': 'Atletico Madrid',
+  'atletico madrid': 'Atletico Madrid',
+  'atletico de madrid': 'Atletico Madrid',
+  'borussia dortmund': 'Borussia Dortmund',
+  dortmund: 'Borussia Dortmund',
+  roma: 'AS Roma',
+  'as roma': 'AS Roma',
+  porto: 'FC Porto',
+  'fc porto': 'FC Porto',
+  'manchester united': 'Manchester United',
+  'man. united': 'Manchester United',
+  'man united': 'Manchester United',
+  'manchester city': 'Manchester City',
+  'man. city': 'Manchester City',
+  'man city': 'Manchester City',
+  'club brugge kv': 'Club Brugge',
+  'club brugge': 'Club Brugge',
+  psv: 'PSV Eindhoven',
+  'psv eindhoven': 'PSV Eindhoven',
+  'sporting cp': 'Sporting CP',
+  sporting: 'Sporting CP',
+  'bodø/glimt': 'Bodo/Glimt',
+  'bodo/glimt': 'Bodo/Glimt',
+  'bodo glimt': 'Bodo/Glimt',
+  'rb leipzig': 'RB Leipzig',
+  leipzig: 'RB Leipzig',
+  'shakhtar donetsk': 'Shakhtar Donetsk',
+  shakhtar: 'Shakhtar Donetsk',
+  'fenerbahçe': 'Fenerbahce',
+  fenerbahce: 'Fenerbahce',
+};
+
+function canonicalTeamName(name: string): string {
+  const key = name.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return TEAM_CANONICAL[key] ?? name;
+}
+
 function buildEventMetadata(
   matchId: string,
   competitionId: string,
@@ -250,6 +327,10 @@ async function upsertTeam(
   competitionFormat: CompetitionFormat | null,
 ): Promise<string | null> {
   if (!team?.name) return null;
+
+  // Canonicalize the name so different providers converge on one Team row.
+  const normalizedName = canonicalTeamName(team.name);
+
   const externalRefId = team.id.split(':').slice(2).join(':') || team.id;
   const providerRef: ProviderRef = { provider, externalId: externalRefId };
 
@@ -262,11 +343,11 @@ async function upsertTeam(
   const existing =
     existingByRef ??
     (await prisma.team.findFirst({
-      where: { sportId: sport, name: team.name },
+      where: { sportId: sport, name: normalizedName },
     }));
   const inferredType = inferTeamType({
     sport: sport as NormalizerSport,
-    teamName: team.name,
+    teamName: normalizedName,
     competitionFormat: competitionFormat ?? undefined,
   });
 
@@ -296,7 +377,7 @@ async function upsertTeam(
   const created = await prisma.team.create({
     data: {
       sportId: sport,
-      name: team.name,
+      name: normalizedName,
       shortName: team.shortName ?? null,
       logoUrl: team.logoUrl,
       type: inferredType ?? null,
@@ -398,7 +479,7 @@ export async function upsertMatch(match: NormalizedMatch): Promise<UpsertMatchRe
     homeScore: match.score?.home ?? null,
     awayScore: match.score?.away ?? null,
     venue: match.venue,
-    round: match.round,
+    round: sanitizeRound(match.round, existing?.round),
     metadata: (match.metadata ?? {}) as object,
     lastSyncedAt: new Date(),
   };
