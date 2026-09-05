@@ -21,7 +21,7 @@ import { prisma } from '@kairo/db';
 
 /* -------------------------------------------------------------------------- */
 
-export type CopyKind = 'pre_event' | 'live_now' | 'welcome' | 'test';
+export type CopyKind = 'pre_event' | 'live_now' | 'welcome' | 'test' | 'result';
 
 export type CopyContext = {
   kind: CopyKind;
@@ -48,6 +48,11 @@ export type CopyContext = {
   firstName?: string | null;
   /** Signal that this is a rivalry / derby — enables spicier copy. */
   isDerby?: boolean;
+  /** Post-match result fields */
+  homeScore?: number | null;
+  awayScore?: number | null;
+  /** Goal scorer names for result notifications */
+  scorers?: string[];
 };
 
 export type Copy = { title: string; body: string; aiGenerated: boolean };
@@ -136,6 +141,30 @@ const LIVE_NOW_GENERIC: Template[] = [
   { title: 'Live now: {match}', body: '{competition}.' },
 ];
 
+/* -------------------------------------------------------------------------- */
+/*  Post-match result templates                                               */
+/*  Placeholders: {home} {away} {score} {scorer} {name} {competition}         */
+/* -------------------------------------------------------------------------- */
+
+const RESULT_WIN: Template[] = [
+  { title: '{home} {score} {away}', body: '{name}, {winner} got the job done. {scorerLine}' },
+  { title: 'Full time: {score}', body: '{winner} take all three points{compSuffix}. {scorerLine}' },
+  { title: '{winner} win!', body: '{score}. {scorerLine} Another day, another result.' },
+  { title: '{name}, final whistle', body: '{home} {score} {away}. {scorerLine}' },
+];
+
+const RESULT_DRAW: Template[] = [
+  { title: '{home} {score} {away}', body: 'Honours even. Nobody goes home happy.' },
+  { title: 'Full time: {score}', body: '{home} and {away} share the spoils{compSuffix}.' },
+  { title: 'All square', body: '{home} {score} {away}. Fair result or daylight robbery? {name}, you decide.' },
+];
+
+const RESULT_UPSET: Template[] = [
+  { title: '{winner} pull off the upset!', body: '{score}. {name}, nobody saw that coming. {scorerLine}' },
+  { title: 'SCENES. {score}', body: '{winner} shock {loser}{compSuffix}. {scorerLine}' },
+  { title: '{name}, you need to see this', body: '{home} {score} {away}. The post-match interviews will be spicy.' },
+];
+
 const WELCOME: Template[] = [
   {
     title: 'Welcome to Kairos{nameSuffix}',
@@ -157,6 +186,15 @@ function templatePoolFor(ctx: CopyContext): Template[] {
   if (ctx.kind === 'welcome' || ctx.kind === 'test') return WELCOME;
 
   const isTeam = Boolean(ctx.homeTeam && ctx.awayTeam);
+
+  if (ctx.kind === 'result' && isTeam) {
+    const hs = ctx.homeScore ?? 0;
+    const as = ctx.awayScore ?? 0;
+    if (hs === as) return RESULT_DRAW;
+    // Simple upset detection: away team wins (basic heuristic)
+    if (as > hs) return RESULT_UPSET.length > 0 ? RESULT_UPSET : RESULT_WIN;
+    return RESULT_WIN;
+  }
 
   if (ctx.kind === 'live_now') {
     if (ctx.sport === 'f1') return LIVE_NOW_F1;
@@ -185,6 +223,19 @@ function renderTemplate(t: Template, ctx: CopyContext): { title: string; body: s
         ? `${ctx.competition}${roundSuffix}`
         : ctx.round ?? 'Upcoming event';
 
+  // Result-specific vars
+  const hs = ctx.homeScore ?? 0;
+  const as = ctx.awayScore ?? 0;
+  const score = `${hs}\u2013${as}`;
+  const winner = hs > as ? (ctx.homeTeam ?? '') : (ctx.awayTeam ?? '');
+  const loser = hs > as ? (ctx.awayTeam ?? '') : (ctx.homeTeam ?? '');
+  const scorerLine = ctx.scorers?.length
+    ? ctx.scorers.length === 1
+      ? `${ctx.scorers[0]} on the scoresheet.`
+      : `${ctx.scorers.slice(0, 2).join(', ')} among the scorers.`
+    : '';
+  const scorer = ctx.scorers?.[0] ?? '';
+
   const vars: Record<string, string> = {
     mins: String(ctx.minsUntil ?? 15),
     match,
@@ -194,9 +245,14 @@ function renderTemplate(t: Template, ctx: CopyContext): { title: string; body: s
     compSuffix,
     home: ctx.homeTeam ?? '',
     away: ctx.awayTeam ?? '',
-    name: ctx.firstName ?? '',
+    name: ctx.firstName ?? 'friend',
     nameSuffix,
     nameSalutation,
+    score,
+    winner,
+    loser,
+    scorerLine,
+    scorer,
   };
 
   const replace = (s: string): string =>

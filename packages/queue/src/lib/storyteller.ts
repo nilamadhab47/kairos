@@ -40,6 +40,14 @@ export type StoryEvent = {
   isDerby: boolean;
   isFinal: boolean;
   prestige: boolean;
+  /** Top scorers in recent matches for either team (from MatchEvent data) */
+  recentScorers?: string[];
+  /** Key player names (top scorer of the season, etc.) */
+  keyPlayers?: { home?: string; away?: string };
+  /** Team form strings like "WWDLW" */
+  form?: { home?: string; away?: string };
+  /** Last H2H result if available */
+  lastH2H?: string;
 };
 
 export type StoryUser = {
@@ -116,7 +124,8 @@ function hash(str: string): number {
 
 /* -------------------------------------------------------------------------- */
 /*  Template floor — one pool per (stage, event shape).                        */
-/*  Placeholders: {home} {away} {competition} {round} {name}                   */
+/*  Placeholders: {home} {away} {competition} {round} {name} {scorer}         */
+/*                {formHint} {mins} {compSuffix}                               */
 /* -------------------------------------------------------------------------- */
 
 type Tmpl = { title: string; body: string };
@@ -126,20 +135,28 @@ const T = {
     team: [
       { title: '{home} vs {away} tonight', body: 'Ready for another chapter?' },
       { title: '{competition}: {home} vs {away}', body: 'The day has a headline. Who writes it?' },
-      { title: 'Tonight — {home} vs {away}', body: 'You’ll want to be near a screen.' },
-      { title: '{home} vs {away} — later today', body: 'Some fixtures don’t need hype. This one does.' },
+      { title: 'Tonight \u2014 {home} vs {away}', body: "You'll want to be near a screen." },
+      { title: '{home} vs {away} \u2014 later today', body: "Some fixtures don't need hype. This one does." },
+      { title: 'Heads up, {name}', body: '{home} vs {away} tonight. Your evening just got interesting.' },
+      { title: '{name}, clear your schedule', body: "{home} vs {away} later. You'll regret missing this." },
+      { title: '{home} vs {away} tonight', body: '{scorer} has been on fire. Will the streak continue?' },
+      { title: '{away} come to town', body: '{home} host {away} tonight. {formHint}' },
     ],
     derby: [
       { title: 'Derby day: {home} vs {away}', body: 'Everyone will have an opinion by full time.' },
-      { title: 'It’s on tonight', body: '{home} vs {away}. Rivalries don’t need reminders — but here’s one.' },
+      { title: "It's on tonight", body: "{home} vs {away}. Rivalries don't need reminders \u2014 but here's one." },
+      { title: "{name}, it's derby day", body: '{home} vs {away}. Friendships will be tested tonight.' },
+      { title: 'Hide the group chat', body: '{home} vs {away} derby tonight. Things are about to get loud.' },
     ],
     f1: [
-      { title: '{round} today', body: 'Grid’s set. Storylines waiting to unfold.' },
-      { title: 'Lights out later', body: '{round} — worth the coffee break.' },
+      { title: '{round} today', body: "Grid's set. Storylines waiting to unfold." },
+      { title: 'Lights out later', body: '{round} \u2014 worth the coffee break.' },
+      { title: '{name}, engines warm today', body: '{round}. Pick your winner before lights out.' },
     ],
     generic: [
-      { title: 'Big one today', body: '{competition}. You’ll want to know how this ends.' },
-      { title: 'Today’s the day', body: '{competition}. Set an alarm you won’t need.' },
+      { title: 'Big one today', body: "{competition}. You'll want to know how this ends." },
+      { title: "Today's the day", body: "{competition}. Set an alarm you won't need." },
+      { title: '{name}, got plans tonight?', body: '{competition} might change them.' },
     ],
   },
   midday_hype: {
@@ -147,14 +164,19 @@ const T = {
       { title: 'A few hours to go', body: '{home} vs {away}. The build-up is half the fun.' },
       { title: 'Half a day out', body: 'Two sides, one storyline: {home} vs {away}.' },
       { title: 'The main event is close', body: '{home} vs {away}{compSuffix}. Feel the tempo shift?' },
+      { title: '{name}, the clock is ticking', body: "{home} vs {away} in a few hours. Who's your pick?" },
+      { title: 'Prediction time, {name}', body: '{home} vs {away}. Drop your scoreline guess. No pressure.' },
+      { title: 'Can {scorer} do it again?', body: '{home} vs {away} tonight. Form says yes, football says maybe.' },
     ],
     derby: [
-      { title: 'Feel that? It’s derby energy', body: '{home} vs {away}. Nothing else matters tonight.' },
+      { title: "Feel that? It's derby energy", body: '{home} vs {away}. Nothing else matters tonight.' },
       { title: 'Countdown to bragging rights', body: '{home} vs {away}. Nobody sleeps easy after this.' },
+      { title: 'Social media is warming up', body: '{home} vs {away}. The real match is already in the replies.' },
     ],
     f1: [
-      { title: 'Grid’s taking shape', body: '{round}. Who’s about to stake a claim?' },
-      { title: 'A few hours to lights out', body: '{round}. Who writes today’s headline?' },
+      { title: "Grid's taking shape", body: "{round}. Who's about to stake a claim?" },
+      { title: 'A few hours to lights out', body: "{round}. Who writes today's headline?" },
+      { title: '{name}, made your prediction?', body: '{round}. Podium picks before formation lap?' },
     ],
     generic: [
       { title: 'Halfway there', body: '{competition}. The stakes are quietly stacking up.' },
@@ -163,17 +185,22 @@ const T = {
   },
   pre_event: {
     team: [
-      { title: '{home} vs {away} — {mins}m to go', body: 'Grab a seat. It’s time.' },
+      { title: '{home} vs {away} \u2014 {mins}m to go', body: "Grab a seat. It's time." },
       { title: '{mins} minutes to kickoff', body: '{home} vs {away}{compSuffix}. Ready?' },
       { title: 'Almost there', body: '{home} vs {away} in {mins} minutes. This is your reminder.' },
+      { title: '{name}, {mins}m to kickoff', body: "{home} vs {away}. Whatever you're doing, this is better." },
+      { title: 'Phone down in {mins}m', body: "{home} vs {away} is about to start. Actually, keep it \u2014 you'll need scores." },
+      { title: '{home} vs {away} in {mins}m', body: '{scorer} starts. The rest is unscripted.' },
     ],
     derby: [
-      { title: 'Derby time — {mins}m', body: '{home} vs {away}. Ninety minutes decide everything.' },
+      { title: 'Derby time \u2014 {mins}m', body: '{home} vs {away}. Ninety minutes decide everything.' },
       { title: '{mins}m to the big one', body: '{home} vs {away}. Deep breath.' },
+      { title: "{name}, it's almost time", body: '{home} vs {away} in {mins}m. This is what we live for.' },
     ],
     f1: [
-      { title: '{round} — {mins}m to lights out', body: 'Grid is forming.' },
+      { title: '{round} \u2014 {mins}m to lights out', body: 'Grid is forming.' },
       { title: 'Lights out in {mins}', body: '{round}. Here we go.' },
+      { title: '{name}, lights out in {mins}m', body: '{round}. Phones on silent, eyes on the grid.' },
     ],
     generic: [
       { title: 'Starting in {mins}m', body: '{competition}. Time to tune in.' },
@@ -205,19 +232,45 @@ function renderTemplate(
   user: StoryUser,
   minsUntilStart: number,
 ): { title: string; body: string } {
-  const compSuffix = event.competition ? ` · ${event.competition}` : '';
+  const compSuffix = event.competition ? ` \u00B7 ${event.competition}` : '';
+  const scorer = event.recentScorers?.[0]
+    ?? event.keyPlayers?.home
+    ?? event.keyPlayers?.away
+    ?? '';
+  const formHint = buildFormHint(event);
   const vars: Record<string, string> = {
     home: event.homeTeam ?? '',
     away: event.awayTeam ?? '',
     competition: event.competition ?? '',
     round: event.round ?? event.competition ?? 'the event',
-    name: user.firstName ?? '',
+    name: user.firstName ?? 'friend',
     mins: String(Math.max(1, Math.round(minsUntilStart))),
     compSuffix,
+    scorer,
+    formHint,
   };
   const replace = (s: string): string =>
     s.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? '');
-  return { title: replace(tmpl.title).trim(), body: replace(tmpl.body).trim() };
+  let title = replace(tmpl.title).trim();
+  let body = replace(tmpl.body).trim();
+  // If a template used {scorer} but we had no scorer, strip the empty reference
+  if (!scorer && (title.includes('  ') || body.includes('  '))) {
+    title = title.replace(/\s{2,}/g, ' ').trim();
+    body = body.replace(/\s{2,}/g, ' ').trim();
+  }
+  return { title, body };
+}
+
+function buildFormHint(event: StoryEvent): string {
+  if (!event.form?.home && !event.form?.away) return 'Form guide loading\u2026';
+  const parts: string[] = [];
+  if (event.form?.home && event.homeTeam) {
+    parts.push(`${event.homeTeam}: ${event.form.home}`);
+  }
+  if (event.form?.away && event.awayTeam) {
+    parts.push(`${event.awayTeam}: ${event.form.away}`);
+  }
+  return parts.join(' | ') || 'Should be a good one.';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -228,31 +281,39 @@ type LlmStagePayload = { candidates: Array<{ title: string; body: string }> };
 type LlmResponse = { stages: Partial<Record<StoryStage, LlmStagePayload>> };
 
 const SYSTEM_PROMPT = [
-  'You are Kairos, a sports storyteller writing mobile push notifications.',
+  'You are Kairos, a sports-obsessed friend writing mobile push notifications.',
   '',
-  'Voice: catchy, curious, energetic, sports-native, slightly provocative. Human, never corporate.',
-  'Never sound like a calendar reminder. Notifications must make the reader think:',
-  '  "Wait… I want to know what happens."',
+  'PERSONALITY: witty, warm, slightly cheeky. Like a friend who texts you before a big match.',
+  'Think: "your best mate who somehow knows every fixture". Subtle humor, not cringe.',
+  'Never sound like a calendar app, a corporate brand, or a betting site.',
+  'Notifications must make the reader think: "Ha, okay yeah I need to watch this."',
   '',
-  'You will be given a single upcoming sports event and asked to write a 3-chapter push',
-  'STORYLINE across three stages. Read them as chapters of one story — do NOT repeat',
-  'phrasing or nouns across stages. Each stage has its own job:',
+  'PERSONALIZATION TOOLS:',
+  "  - Use the user's first name naturally (not every notification \u2014 about 40% of them).",
+  '    Good: "{name}, this one\'s going to be spicy" / Bad: "Hey {name}! Don\'t miss this!!"',
+  '  - When recentScorers or keyPlayers are provided, weave player names into the hook.',
+  '    Good: "Salah\'s been scoring for fun. Can anyone stop him tonight?"',
+  '    Bad: "Mohamed Salah will play in the match today."',
+  '  - When form data is provided, use it for narrative tension.',
+  '    Good: "3 wins in a row. {home} are buzzing." / Bad: "Form: WWWDL"',
+  "  - When it's a derby, lean into the rivalry energy. Friendly trash talk is welcome.",
   '',
-  '  MORNING_TEASER  — earlier in the day. Create anticipation. A hint, not a headline.',
-  '  MIDDAY_HYPE     — a few hours out. Introduce a storyline / question / rivalry hook.',
-  '                    Zero fabrication. If you don’t have real facts, ask a question.',
-  '  PRE_EVENT       — ~15 minutes out. Direct but still with a hook.',
+  'You will write a 3-chapter push STORYLINE across three stages:',
+  '',
+  '  MORNING_TEASER  \u2014 plant the seed. Make them think about it all day.',
+  '  MIDDAY_HYPE     \u2014 build the narrative. Ask questions, tease storylines.',
+  '  PRE_EVENT       \u2014 ~15 min out. Urgent but clever. "Drop everything" energy.',
   '',
   'HARD RULES:',
-  '  - Use ONLY the facts in `context`. Never invent player names, stats, records,',
-  '    injuries, quotes, or historical claims. If context is thin, write a pure',
-  '    curiosity hook based on what IS given.',
-  '  - Respect the recentTitlesUserHasSeen list — do not repeat or paraphrase.',
-  '  - title  ≤ 45 characters. body ≤ 120 characters.',
-  '  - No emojis unless the sport uses them by default. No ALL CAPS.',
-  '  - No URLs, no hashtags, no @-mentions. No trailing punctuation on titles.',
+  '  - Use ONLY facts from `context`. You may reference recentScorers and keyPlayers',
+  '    BY NAME. Never invent other player names, stats, records, or quotes.',
+  "  - Don't repeat phrasing across stages. Each chapter is distinct.",
+  '  - title \u2264 45 chars. body \u2264 120 chars.',
+  '  - No emojis. No ALL CAPS. No URLs, hashtags, or @-mentions.',
+  '  - No trailing punctuation on titles.',
+  '  - Subtle humor \u2014 think wry observation, not dad jokes.',
   '',
-  'OUTPUT: return ONLY a JSON object matching this exact schema. No prose, no code fences.',
+  'OUTPUT: return ONLY a JSON object. No prose, no code fences.',
   '{',
   '  "stages": {',
   '    "morning_teaser": { "candidates": [{"title":"...","body":"..."}, ...] },',
@@ -307,6 +368,10 @@ async function callAnthropic(
       isDerby: ctx.event.isDerby,
       isFinal: ctx.event.isFinal,
       prestige: ctx.event.prestige,
+      recentScorers: ctx.event.recentScorers?.slice(0, 5) ?? [],
+      keyPlayers: ctx.event.keyPlayers ?? {},
+      form: ctx.event.form ?? {},
+      lastH2H: ctx.event.lastH2H ?? null,
     },
     user: {
       firstName: ctx.user.firstName,

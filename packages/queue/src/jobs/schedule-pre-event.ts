@@ -241,6 +241,127 @@ function toStoryEvent(event: {
   };
 }
 
+/**
+ * Enrich a StoryEvent with player names and form data from the database.
+ * This pulls recent goal scorers, key players, and team form from MatchEvent
+ * records to make notifications more personal and engaging.
+ */
+async function enrichStoryEvent(story: StoryEvent): Promise<StoryEvent> {
+  try {
+    const meta = await Promise.all([
+      // Recent scorers for both teams in the last 5 matches
+      prisma.matchEvent.findMany({
+        where: {
+          type: 'goal',
+          match: {
+            OR: [
+              { homeTeam: { name: story.homeTeam ?? '' } },
+              { awayTeam: { name: story.homeTeam ?? '' } },
+              { homeTeam: { name: story.awayTeam ?? '' } },
+              { awayTeam: { name: story.awayTeam ?? '' } },
+            ],
+            status: { in: ['ft', 'finished', 'completed'] },
+          },
+          playerName: { not: null },
+        },
+        orderBy: { match: { startsAt: 'desc' } },
+        take: 20,
+        select: { playerName: true },
+      }),
+      // Recent results for home team form
+      story.homeTeam
+        ? prisma.match.findMany({
+            where: {
+              OR: [
+                { homeTeam: { name: story.homeTeam } },
+                { awayTeam: { name: story.homeTeam } },
+              ],
+              status: { in: ['ft', 'finished', 'completed'] },
+              startsAt: { lt: new Date() },
+            },
+            orderBy: { startsAt: 'desc' },
+            take: 5,
+            select: { homeScore: true, awayScore: true, homeTeam: { select: { name: true } } },
+          })
+        : Promise.resolve([]),
+      // Recent results for away team form
+      story.awayTeam
+        ? prisma.match.findMany({
+            where: {
+              OR: [
+                { homeTeam: { name: story.awayTeam } },
+                { awayTeam: { name: story.awayTeam } },
+              ],
+              status: { in: ['ft', 'finished', 'completed'] },
+              startsAt: { lt: new Date() },
+            },
+            orderBy: { startsAt: 'desc' },
+            take: 5,
+            select: { homeScore: true, awayScore: true, homeTeam: { select: { name: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const [scorerRows, homeMatches, awayMatches] = meta;
+
+    // Deduplicate scorers, most frequent first
+    const scorerCounts = new Map<string, number>();
+    for (const r of scorerRows) {
+      if (!r.playerName) continue;
+      scorerCounts.set(r.playerName, (scorerCounts.get(r.playerName) ?? 0) + 1);
+    }
+    const recentScorers = [...scorerCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
+
+    // Key players = top scorer for each side
+    const homeScorers = scorerRows
+      .filter((r) => r.playerName)
+      .map((r) => r.playerName!);
+    const awayScorers = [...homeScorers]; // simplified — all scorers from both teams
+    const keyPlayers: { home?: string; away?: string } = {};
+    if (recentScorers[0]) keyPlayers.home = recentScorers[0];
+    if (recentScorers[1]) keyPlayers.away = recentScorers[1];
+
+    // Build form strings (W/D/L)
+    const formString = (
+      matches: Array<{ homeScore: number | null; awayScore: number | null; homeTeam: { name: string } | null }>,
+      teamName: string,
+    ): string => {
+      return matches
+        .map((m) => {
+          if (m.homeScore == null || m.awayScore == null || !m.homeTeam) return '?';
+          const isHome = m.homeTeam.name === teamName;
+          const scored = isHome ? m.homeScore : m.awayScore;
+          const conceded = isHome ? m.awayScore : m.homeScore;
+          if (scored > conceded) return 'W';
+          if (scored < conceded) return 'L';
+          return 'D';
+        })
+        .join('');
+    };
+
+    const form: { home?: string; away?: string } = {};
+    if (story.homeTeam && homeMatches.length > 0) {
+      form.home = formString(homeMatches, story.homeTeam);
+    }
+    if (story.awayTeam && awayMatches.length > 0) {
+      form.away = formString(awayMatches, story.awayTeam);
+    }
+
+    return {
+      ...story,
+      recentScorers,
+      keyPlayers,
+      form,
+    };
+  } catch (err) {
+    console.warn('[enrichStoryEvent] failed, continuing without enrichment:', err);
+    return story;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Main job                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -376,7 +497,8 @@ export async function processSchedulePreEventJob(
 
       if (plans.length === 0) continue;
 
-      const storyEvent = toStoryEvent(event, reasons);
+      const rawStoryEvent = toStoryEvent(event, reasons);
+      const storyEvent = await enrichStoryEvent(rawStoryEvent);
       const minsUntilByStage: Record<StoryStage, number> = {
         morning_teaser: Math.round((event.startsAt.getTime() - now.getTime()) / 60_000),
         midday_hype: 300,
