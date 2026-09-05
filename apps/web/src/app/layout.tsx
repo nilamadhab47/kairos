@@ -27,12 +27,20 @@ export const metadata: Metadata = {
   description:
     'Kairos follows your teams, leagues and races — and nudges you right before the moments you care about. No feeds. No noise. Just your sports, right on time.',
   keywords: [
-    'sports calendar',
+    'sports calendar app',
     'match reminders',
     'football fixtures',
-    'F1 schedule',
-    'cricket fixtures',
+    'F1 race schedule',
+    'cricket match alerts',
     'sports notifications',
+    'Premier League fixtures',
+    'La Liga schedule',
+    'UEFA Champions League calendar',
+    'multi-sport calendar',
+    'live scores',
+    'never miss a match',
+    'sports schedule sync',
+    'team match countdown',
   ],
   openGraph: {
     type: 'website',
@@ -58,9 +66,32 @@ export const viewport: Viewport = {
   themeColor: '#05070A',
 };
 
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Kairos',
+  operatingSystem: 'iOS, Android',
+  applicationCategory: 'SportsApplication',
+  description:
+    'Follow your teams across football, F1 and cricket. Get smart reminders before every match. Sync with your calendar.',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
+  url: SITE_URL,
+  aggregateRating: undefined,
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body className="font-sans">
         <SmoothScroll>{children}</SmoothScroll>
         <Cursor />
