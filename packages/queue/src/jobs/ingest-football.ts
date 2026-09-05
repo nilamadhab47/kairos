@@ -18,6 +18,7 @@ import {
   APIFootballProvider,
   ESPNProvider,
   ESPN_REMINDER_SOCCER_LEAGUES,
+  FPLProvider,
   findCompetitionIdByProvider,
   SportAPI7Provider,
   upsertMatches,
@@ -82,6 +83,11 @@ export interface IngestFootballLeagueResult extends UpsertBatchResult {
   pagesFetched?: number;
 }
 
+export interface FplIngestResult {
+  fixtures: UpsertBatchResult;
+  standings: { competitionId: string | null; rows: number } | null;
+}
+
 export interface IngestFootballResult {
   season: number;
   /** ESPN reminder window (today + upcoming months). */
@@ -92,6 +98,8 @@ export interface IngestFootballResult {
     upcoming: number;
     today: number;
   };
+  /** Official FPL data (Premier League only — authoritative scores + table). */
+  fpl: FplIngestResult | null;
   leagues: IngestFootballLeagueResult[];
   standings: Array<{
     leagueId: number;
@@ -246,6 +254,51 @@ export async function ingestFootballFixtures(opts?: {
     });
   }
 
+  // 1b) FPL — authoritative PL fixtures + standings (free, no key)
+  let fpl: FplIngestResult | null = null;
+  try {
+    const fplProvider = new FPLProvider();
+    const fplMatches = await fplProvider.fetchMatches({ sport: 'football' });
+    const fplBatch = await upsertMatches(fplMatches);
+
+    let fplStandings: FplIngestResult['standings'] = null;
+    try {
+      const table = await fplProvider.fetchStandings({
+        sport: 'football',
+        competitionId: 'Premier League',
+        season: seasonHint,
+      });
+      if (table) {
+        const plCompId = await resolveDbCompetitionId({
+          apiFootballLeagueId: 39,
+          sportApi7TournamentId: 17,
+          name: 'Premier League',
+          espnSlug: 'eng.1',
+        });
+        if (plCompId) {
+          const { rows } = await upsertStandings(plCompId, table.season, table);
+          fplStandings = { competitionId: plCompId, rows };
+        }
+      }
+    } catch (standErr) {
+      errors.push({
+        provider: 'fpl:standings',
+        message: standErr instanceof Error ? standErr.message : String(standErr),
+      });
+    }
+
+    fpl = { fixtures: fplBatch, standings: fplStandings };
+    console.log(
+      `[fpl] Ingested ${fplBatch.processed} PL fixtures (${fplBatch.created} new, ${fplBatch.updated} updated)` +
+        (fplStandings ? `, standings ${fplStandings.rows} rows` : ''),
+    );
+  } catch (err) {
+    errors.push({
+      provider: 'fpl:fixtures',
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   let ucl: IngestUclResult | null = null;
   if (!opts?.skipUcl) {
     try {
@@ -266,6 +319,7 @@ export async function ingestFootballFixtures(opts?: {
     return {
       season,
       fixtures: fixturesBatch,
+      fpl,
       leagues,
       standings: standingsResults,
       providerErrors: errors,
@@ -402,6 +456,7 @@ export async function ingestFootballFixtures(opts?: {
   return {
     season,
     fixtures: fixturesBatch,
+    fpl,
     leagues,
     standings: standingsResults,
     providerErrors: errors,

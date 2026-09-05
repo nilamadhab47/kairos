@@ -91,6 +91,34 @@ User.googleToken and ConnectedSource already exist in Prisma for this. Do not sc
 
 Keep WhatsApp / Claude copy / Telegram in this milestone still deferred.
 
+## Fantasy Premier League (long-term feature)
+
+**Goal:** Integrate FPL as a first-class feature — users manage their fantasy
+team, track mini-league rivals, and get captain/transfer suggestions alongside
+real match data.
+
+**Data foundation (done):** FPL provider wired into ingest pipeline. Free
+public endpoints pull all 380 PL fixtures with official scores, 20-team
+standings with W/D/L/form, and per-match goal/card stats — no API key needed.
+
+| Phase | Work | Notes |
+|---|---|---|
+| **Phase 0** ✅ | FPL data provider + ingest | Fixtures, scores, standings from `fantasy.premierleague.com/api` |
+| **Phase 1** | FPL entry viewer | Link your FPL team (entry ID) → show GW points, rank, transfers, chip usage. Read-only, no auth needed. |
+| **Phase 2** | Mini-league tracker | Follow a classic/H2H league → leaderboard widget on Today, GW-by-GW rank deltas, rival comparison cards |
+| **Phase 3** | Smart captain & transfer hints | Surface "Player X has best fixture run" or "Your rival captained Y" using bootstrap `elements` data (form, ICT, xG, fixtures) |
+| **Phase 4** | Authenticated actions | Make transfers, set lineup, activate chips via authenticated session cookie. Fragile — FPL has no official write API. Only attempt after phases 1–3 are solid. |
+
+**API endpoints available (all free, no key):**
+- `/api/bootstrap-static/` — full game state (players, teams, gameweeks)
+- `/api/fixtures/` — all fixtures with scores + bonus + per-player stats
+- `/api/entry/{id}/` — any manager's public profile
+- `/api/entry/{id}/history/` — season history + past seasons
+- `/api/entry/{id}/event/{gw}/picks/` — squad selection per GW
+- `/api/event/{gw}/live/` — real-time points for every player
+- `/api/leagues-classic/{id}/standings/` — classic league standings
+- `/api/element-summary/{id}/` — per-player detailed history
+
 ## Milestone M4 — Channels & intelligence (defer)
 
 - WhatsApp / Twilio

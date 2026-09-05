@@ -13,6 +13,7 @@ import { TheSportsDBProvider } from './providers/thesportsdb.js';
 import { OpenF1Provider } from './providers/openf1.js';
 import { APIFootballProvider } from './providers/api-football.js';
 import { ESPNProvider } from './providers/espn.js';
+import { FPLProvider } from './providers/fpl.js';
 
 /**
  * Initialize the sports router with all configured providers.
@@ -32,6 +33,10 @@ export function initSportsProviders(): void {
 
   // ESPN — free, no key required. Broad multi-sport coverage.
   sportsRouter.register(new ESPNProvider());
+
+  // FPL — official Premier League data, free, no key. Authoritative for PL
+  // fixtures, scores, and standings. Priority 5 (higher than ESPN for PL).
+  sportsRouter.register(new FPLProvider());
 
   // TheSportsDB is always available (free key "3" as fallback)
   sportsRouter.register(new TheSportsDBProvider());
