@@ -291,9 +291,11 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       });
       if (!team) return reply.code(404).send({ error: 'not_found' });
 
-      // Latest standings row for this team — prefer league-format competitions
-      // (a cup has no meaningful table position).
-      const standingRow = await prisma.standingRow.findFirst({
+      // Latest standings row for this team — prefer the DOMESTIC league
+      // over supranational tournaments (UCL/EL/ECL). Otherwise a team
+      // page shows the UCL table instead of La Liga just because UCL was
+      // ingested last.
+      const candidateRows = await prisma.standingRow.findMany({
         where: {
           teamId: id,
           standing: { competition: { format: 'league' } },
@@ -305,6 +307,14 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         },
         orderBy: { standing: { lastSyncedAt: 'desc' } },
       });
+
+      const isSupranational = (name: string) =>
+        /^(UEFA|CONMEBOL|CONCACAF|AFC|CAF)\b/i.test(name);
+
+      const standingRow =
+        candidateRows.find((r) => !isSupranational(r.standing.competition.name)) ??
+        candidateRows[0] ??
+        null;
 
       // If we have a standings row but no form string, derive one from the
       // team's own recent finished matches (pattern from dominberbel98's

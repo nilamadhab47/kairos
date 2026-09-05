@@ -244,6 +244,19 @@ export class SportsrcProvider implements SportsProvider {
     const table = res.data.standings?.[0]?.table ?? [];
     if (table.length === 0) return null;
 
+    // Vendor sanity check: sportsrc sometimes serves last season's final
+    // table under new-season metadata (observed with UEFA CL in Sept 2026:
+    // season.startDate=2026-09-08, currentMatchday=1, but every team shows
+    // 8 played). If the reported season hasn't started yet and teams show
+    // games played, treat the payload as stale and refuse to ingest it —
+    // otherwise the app displays fake rankings.
+    const startDate = new Date(res.data.season.startDate);
+    const now = new Date();
+    const maxPlayed = table.reduce((m, r) => Math.max(m, r.playedGames), 0);
+    if (startDate > now && maxPlayed > 0) {
+      return null;
+    }
+
     const rows: NormalizedStandingRow[] = table.map((row) => ({
       position: row.position,
       teamId: `sportsrc:team:${row.team.id}`,

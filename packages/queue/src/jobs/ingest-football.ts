@@ -279,36 +279,12 @@ export async function ingestFootballFixtures(opts?: {
     const fplMatches = await fplProvider.fetchMatches({ sport: 'football' });
     const fplBatch = await upsertMatches(fplMatches);
 
-    let fplStandings: FplIngestResult['standings'] = null;
-    try {
-      const table = await fplProvider.fetchStandings({
-        sport: 'football',
-        competitionId: 'Premier League',
-        season: seasonHint,
-      });
-      if (table) {
-        const plCompId = await resolveDbCompetitionId({
-          apiFootballLeagueId: 39,
-          sportApi7TournamentId: 17,
-          name: 'Premier League',
-          espnSlug: 'eng.1',
-        });
-        if (plCompId) {
-          const { rows } = await upsertStandings(plCompId, table.season, table);
-          fplStandings = { competitionId: plCompId, rows };
-        }
-      }
-    } catch (standErr) {
-      errors.push({
-        provider: 'fpl:standings',
-        message: standErr instanceof Error ? standErr.message : String(standErr),
-      });
-    }
-
-    fpl = { fixtures: fplBatch, standings: fplStandings };
+    // NOTE: FPL bootstrap-static doesn't refresh league points in-season
+    // (it ranks teams but leaves points at 0). Sportsrc handles PL standings
+    // instead — see the sportsrc block below.
+    fpl = { fixtures: fplBatch, standings: null };
     console.log(
-      `[fpl] Ingested ${fplBatch.processed} PL fixtures (${fplBatch.created} new, ${fplBatch.updated} updated)` +
-        (fplStandings ? `, standings ${fplStandings.rows} rows` : ''),
+      `[fpl] Ingested ${fplBatch.processed} PL fixtures (${fplBatch.created} new, ${fplBatch.updated} updated)`,
     );
   } catch (err) {
     errors.push({
@@ -317,16 +293,14 @@ export async function ingestFootballFixtures(opts?: {
     });
   }
 
-  // 1c) Sportsrc — free multi-league standings for La Liga, Serie A,
-  // Bundesliga, Ligue 1, UCL, Primeira Liga, Eredivisie. Skips PL because
-  // FPL is authoritative for it above.
+  // 1c) Sportsrc — free multi-league standings for PL, La Liga, Serie A,
+  // Bundesliga, Ligue 1, UCL (guarded against stale season data),
+  // Primeira Liga, Eredivisie.
   let sportsrc: SportsrcIngestResult | null = null;
   try {
     const srcProvider = new SportsrcProvider();
     const srcResults: SportsrcIngestResult['standings'] = [];
-    const targets = CURATED_FOOTBALL_LEAGUES.filter(
-      (l) => l.sportsrcCode && l.sportsrcCode !== 'PL',
-    );
+    const targets = CURATED_FOOTBALL_LEAGUES.filter((l) => l.sportsrcCode);
     for (const meta of targets) {
       const code = meta.sportsrcCode!;
       try {

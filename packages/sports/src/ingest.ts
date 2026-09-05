@@ -211,6 +211,17 @@ const TEAM_CANONICAL: Record<string, string> = {
   'leeds united fc': 'Leeds',
   'burnley fc': 'Burnley',
   'sunderland afc': 'Sunderland',
+  // FPL short-name variants
+  'man utd': 'Manchester United',
+  spurs: 'Tottenham',
+  "nott'm forest": 'Nottingham Forest',
+  'nottm forest': 'Nottingham Forest',
+  'hull city': 'Hull City',
+  'hull city afc': 'Hull City',
+  "ipswich": 'Ipswich Town',
+  'ipswich town': 'Ipswich Town',
+  'coventry': 'Coventry City',
+  'coventry city': 'Coventry City',
 };
 
 function canonicalTeamName(name: string): string {
