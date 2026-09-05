@@ -69,20 +69,24 @@ type TeamSummary = {
     country: string | null;
   };
   competitions: { id: string; name: string; format: string | null; season: string | null }[];
-  standing: {
-    competitionName: string;
-    season: string;
-    position: number;
-    played: number;
-    won: number;
-    drawn: number;
-    lost: number;
-    goalsFor: number;
-    goalsAgainst: number;
-    goalDifference: number;
-    points: number;
-    form: string | null;
-  } | null;
+  standings?: TeamStanding[];
+  standing: TeamStanding | null;
+};
+
+type TeamStanding = {
+  competitionId?: string;
+  competitionName: string;
+  season: string;
+  position: number;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  form: string | null;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -162,36 +166,74 @@ export default function TeamScreen() {
     () => splitHistory(days),
     [days],
   );
-  const totalMatches = resultCount + upcomingCount;
 
   const [view, setView] = useState<'upcoming' | 'results'>('upcoming');
 
-  // Telemetry tiles: prefer the ingested standings row; fall back to values
-  // computed from the fetched match history so tiles never show fake data.
-  const standing = summary.data?.standing ?? null;
-  const telemetry = useMemo(
-    () => buildTelemetry(standing, resultDays, teamId),
-    [standing, resultDays, teamId],
+  // Ordered competition list — domestic leagues first, then supra-national
+  // (UCL, EL, ECL), then cups. Also dedupes by name.
+  const compChips = useMemo(() => {
+    const comps = summary.data?.competitions ?? [];
+    const isSupra = (n: string) => /^(UEFA|CONMEBOL|CONCACAF|AFC|CAF)\b/i.test(n);
+    const priority = (c: { name: string; format: string | null }) => {
+      if (isSupra(c.name)) return 2;
+      if (c.format === 'cup') return 3;
+      return 1; // domestic league
+    };
+    const seen = new Set<string>();
+    const uniq = comps.filter((c) => {
+      if (seen.has(c.name)) return false;
+      seen.add(c.name);
+      return true;
+    });
+    return uniq.sort((a, b) => priority(a) - priority(b));
+  }, [summary.data]);
+
+  // User-selected competition (defaults to first — the domestic league).
+  const [selectedCompId, setSelectedCompId] = useState<string | null>(null);
+  const activeCompId = selectedCompId ?? compChips[0]?.id ?? null;
+  const activeComp = compChips.find((c) => c.id === activeCompId) ?? null;
+
+  // Standing for the active competition (falls back to summary.standing).
+  const allStandings = summary.data?.standings ?? [];
+  const standing: TeamStanding | null = useMemo(() => {
+    if (activeCompId) {
+      const match = allStandings.find((s) => s.competitionId === activeCompId);
+      if (match) return match;
+    }
+    return summary.data?.standing ?? null;
+  }, [allStandings, activeCompId, summary.data]);
+
+  // Filter fixtures/results to the active competition if one is chosen and
+  // multiple exist. If the user hasn't switched (or there's only one), show
+  // everything so team pages stay useful.
+  const filterByComp = compChips.length > 1 && activeComp;
+  const activeCompName = activeComp?.name ?? null;
+  const filteredResultDays = useMemo(
+    () => (filterByComp ? filterDaysByCompetition(resultDays, activeCompName) : resultDays),
+    [filterByComp, resultDays, activeCompName],
+  );
+  const filteredUpcomingDays = useMemo(
+    () => (filterByComp ? filterDaysByCompetition(upcomingDays, activeCompName) : upcomingDays),
+    [filterByComp, upcomingDays, activeCompName],
   );
 
-  const nextMatch = upcomingDays[0]?.matches[0] ?? null;
+  // Telemetry tiles: prefer the ingested standings row; fall back to values
+  // computed from the fetched match history so tiles never show fake data.
+  const telemetry = useMemo(
+    () => buildTelemetry(standing, filteredResultDays, teamId),
+    [standing, filteredResultDays, teamId],
+  );
+
+  const nextMatch = filteredUpcomingDays[0]?.matches[0] ?? null;
   const laterUpcoming = useMemo(() => {
-    if (!nextMatch) return upcomingDays;
+    if (!nextMatch) return filteredUpcomingDays;
     const rest: CalendarDay[] = [];
-    for (const day of upcomingDays) {
+    for (const day of filteredUpcomingDays) {
       const matches = day.matches.filter((m) => m.id !== nextMatch.id);
       if (matches.length > 0) rest.push({ date: day.date, matches });
     }
     return rest;
-  }, [upcomingDays, nextMatch]);
-
-  const compBadges = useMemo(() => {
-    const names = (summary.data?.competitions ?? [])
-      .map((c) => c.name)
-      .filter((n, i, a) => a.indexOf(n) === i)
-      .slice(0, 3);
-    return names;
-  }, [summary.data]);
+  }, [filteredUpcomingDays, nextMatch]);
 
   return (
     <Screen edges={['top']}>
@@ -223,30 +265,39 @@ export default function TeamScreen() {
         </View>
 
         <Animated.View entering={FadeInDown.duration(280)} style={styles.hero}>
-          {compBadges.length > 0 ? (
+          {compChips.length > 0 ? (
             <View style={styles.badgeRow}>
-              {compBadges.map((name, i) => (
-                <View
-                  key={name}
-                  style={[
-                    styles.compBadge,
-                    {
-                      borderColor: i === 0 ? withAlpha(accent, 0.45) : theme.color.border,
-                      backgroundColor: i === 0 ? withAlpha(accent, 0.08) : 'transparent',
-                    },
-                  ]}
-                >
-                  <Text
+              {compChips.map((comp) => {
+                const isActive = comp.id === activeCompId;
+                return (
+                  <Pressable
+                    key={comp.id}
+                    onPress={() => {
+                      if (comp.id === activeCompId) return;
+                      haptics.light();
+                      setSelectedCompId(comp.id);
+                    }}
+                    hitSlop={6}
                     style={[
-                      styles.compBadgeText,
-                      { color: i === 0 ? accent : theme.color.textMuted },
+                      styles.compBadge,
+                      {
+                        borderColor: isActive ? withAlpha(accent, 0.55) : theme.color.border,
+                        backgroundColor: isActive ? withAlpha(accent, 0.12) : 'transparent',
+                      },
                     ]}
-                    numberOfLines={1}
                   >
-                    {name.toUpperCase()}
-                  </Text>
-                </View>
-              ))}
+                    <Text
+                      style={[
+                        styles.compBadgeText,
+                        { color: isActive ? accent : theme.color.textMuted },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {comp.name.toUpperCase()}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           ) : null}
           <View style={[styles.crestWrap, { borderColor: withAlpha(accent, 0.5) }]}>
@@ -266,11 +317,18 @@ export default function TeamScreen() {
           <View style={styles.metaRow}>
             <View style={[styles.pill, { borderColor: theme.color.border }]}>
               <Text style={[styles.pillText, { color: theme.color.textMuted }]}>
-                {totalMatches === 0
-                  ? 'No recent matches'
-                  : [resultCount ? `${resultCount} result${resultCount === 1 ? '' : 's'}` : null, upcomingCount ? `${upcomingCount} upcoming` : null]
-                      .filter(Boolean)
-                      .join(' · ')}
+                {(() => {
+                  const rCount = filteredResultDays.reduce((n, d) => n + d.matches.length, 0);
+                  const uCount = filteredUpcomingDays.reduce((n, d) => n + d.matches.length, 0);
+                  const total = rCount + uCount;
+                  if (total === 0) return 'No recent matches';
+                  return [
+                    rCount ? `${rCount} result${rCount === 1 ? '' : 's'}` : null,
+                    uCount ? `${uCount} upcoming` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ');
+                })()}
               </Text>
             </View>
           </View>
@@ -433,12 +491,12 @@ export default function TeamScreen() {
           </View>
         ) : (
           <View style={styles.list}>
-            {resultDays.length > 0 ? (
+            {filteredResultDays.length > 0 ? (
               <>
                 <Text style={[styles.sectionLabel, { color: theme.color.textFaint }]}>
-                  RECENT MATCHES · LAST {Math.min(resultCount, 99)} LOGGED
+                  RECENT MATCHES · LAST {Math.min(filteredResultDays.reduce((n, d) => n + d.matches.length, 0), 99)} LOGGED
                 </Text>
-                {resultDays.map((day, di) => (
+                {filteredResultDays.map((day, di) => (
                   <DayBlock
                     key={`r-${day.date}`}
                     day={day}
@@ -462,6 +520,27 @@ export default function TeamScreen() {
 }
 
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Filter a list of match days to only include matches from a given
+ * competition (by name — competition IDs may vary across ingest sources).
+ * Empty days are dropped.
+ */
+function filterDaysByCompetition(
+  days: CalendarDay[],
+  competitionName: string | null,
+): CalendarDay[] {
+  if (!competitionName) return days;
+  const target = competitionName.toLowerCase();
+  const out: CalendarDay[] = [];
+  for (const day of days) {
+    const matches = day.matches.filter(
+      (m) => (m.competition?.name ?? '').toLowerCase() === target,
+    );
+    if (matches.length > 0) out.push({ date: day.date, matches });
+  }
+  return out;
+}
 
 function isFinished(status: string): boolean {
   const s = status.toLowerCase();

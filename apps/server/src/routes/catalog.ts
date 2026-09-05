@@ -291,10 +291,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       });
       if (!team) return reply.code(404).send({ error: 'not_found' });
 
-      // Latest standings row for this team — prefer the DOMESTIC league
-      // over supranational tournaments (UCL/EL/ECL). Otherwise a team
-      // page shows the UCL table instead of La Liga just because UCL was
-      // ingested last.
+      // All standings rows for this team — one per league-format
+      // competition. The client renders competition badges as a switcher
+      // and picks which table to display.
       const candidateRows = await prisma.standingRow.findMany({
         where: {
           teamId: id,
@@ -302,7 +301,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         },
         include: {
           standing: {
-            include: { competition: { select: { name: true } } },
+            include: { competition: { select: { id: true, name: true } } },
           },
         },
         orderBy: { standing: { lastSyncedAt: 'desc' } },
@@ -311,6 +310,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       const isSupranational = (name: string) =>
         /^(UEFA|CONMEBOL|CONCACAF|AFC|CAF)\b/i.test(name);
 
+      // Default table (backwards compatibility) — domestic first, then any.
       const standingRow =
         candidateRows.find((r) => !isSupranational(r.standing.competition.name)) ??
         candidateRows[0] ??
@@ -360,6 +360,22 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
           name: tc.competition.name,
           format: tc.competition.format,
           season: tc.competition.season,
+        })),
+        standings: candidateRows.map((r) => ({
+          competitionId: r.standing.competition.id,
+          competitionName: r.standing.competition.name,
+          season: r.standing.season,
+          position: r.position,
+          played: r.played,
+          won: r.won,
+          drawn: r.drawn,
+          lost: r.lost,
+          goalsFor: r.goalsFor,
+          goalsAgainst: r.goalsAgainst,
+          goalDifference: r.goalDifference,
+          points: r.points,
+          form: r.form,
+          lastSyncedAt: r.standing.lastSyncedAt.toISOString(),
         })),
         standing: standingRow
           ? {
