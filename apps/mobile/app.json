@@ -3,7 +3,7 @@
     "name": "Kairos",
     "slug": "kairos",
     "scheme": "kairo",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "app.kairo.mobile",
-      "usesCleartextTraffic": true,
+      "usesCleartextTraffic": false,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -51,6 +51,13 @@
             "kotlinVersion": "1.9.25"
           }
         }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "kairos",
+          "project": "kairos-mobile"
+        }
       ]
     ],
     "experiments": {
@@ -62,9 +69,16 @@
       },
       "eas": {
         "projectId": "e42b0c96-6152-46c7-97c5-ab663b102a0a"
-      }
+      },
+      "links": {
+        "privacyUrl": "https://kaiiros.app/privacy",
+        "termsUrl": "https://kaiiros.app/terms"
+      },
+      "sentryDsn": "",
+      "posthogApiKey": "",
+      "posthogHost": "https://us.i.posthog.com"
     },
-    "runtimeVersion": "0.1.0",
+    "runtimeVersion": "1.0.0",
     "updates": {
       "url": "https://u.expo.dev/e42b0c96-6152-46c7-97c5-ab663b102a0a"
     }

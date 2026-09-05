@@ -1,8 +1,18 @@
+import * as Sentry from '@sentry/node';
 import { buildServer } from './server.js';
 import { loadEnv } from './config/env.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
+
+  if (env.SENTRY_DSN) {
+    Sentry.init({
+      dsn: env.SENTRY_DSN,
+      tracesSampleRate: 0.2,
+      environment: env.NODE_ENV,
+    });
+  }
+
   const app = await buildServer();
 
   try {

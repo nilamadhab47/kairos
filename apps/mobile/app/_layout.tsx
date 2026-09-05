@@ -1,8 +1,10 @@
 import '../global.css';
+import * as Sentry from '@sentry/react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
+import Constants from 'expo-constants';
 import {
   SpaceGrotesk_600SemiBold,
   SpaceGrotesk_700Bold,
@@ -18,6 +20,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { EventDetailProvider, ErrorBoundary } from '@/components';
 import { queryClient } from '@/lib/query';
+import { initAnalytics } from '@/lib/analytics';
 
 // Foreground handler — without this, iOS/Android suppress the banner while
 // the app is open and users only see the row in the in-app alerts tab
@@ -25,6 +28,18 @@ import { queryClient } from '@/lib/query';
 // (`shouldShowBanner`/`shouldShowList`, SDK 51+) and legacy
 // (`shouldShowAlert`) keys so the same code works across expo-notifications
 // versions.
+const SENTRY_DSN = Constants.expoConfig?.extra?.sentryDsn as string | undefined;
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    tracesSampleRate: 0.2,
+    environment: __DEV__ ? 'development' : 'production',
+    enabled: !__DEV__,
+  });
+}
+
+initAnalytics();
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -35,7 +50,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export default function RootLayout() {
+function RootLayout() {
   // Obsidian Precision type pairing: Space Grotesk (headers/scores/telemetry)
   // + Inter (body). Hold the splash until fonts resolve so text never flashes.
   const [fontsLoaded, fontError] = useFonts({
@@ -66,3 +81,5 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default SENTRY_DSN ? Sentry.wrap(RootLayout) : RootLayout;
