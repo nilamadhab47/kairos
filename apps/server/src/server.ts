@@ -8,6 +8,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes, registerTestQueueRoutes } from './routes/health.js';
 import { registerErrorRoutes } from './routes/errors.js';
 import { registerMeRoutes } from './routes/me.js';
+import { registerCalendarFeedRoutes } from './routes/calendar-feed.js';
 import { registerSubscriptionRoutes } from './routes/subscriptions.js';
 import { registerEventRoutes } from './routes/events.js';
 import { registerDeviceRoutes } from './routes/devices.js';
@@ -68,6 +69,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerErrorRoutes(app);
   await registerAuthRoutes(app);
   await registerMeRoutes(app);
+  await registerCalendarFeedRoutes(app);
   await registerSubscriptionRoutes(app);
   await registerEventRoutes(app);
   await registerDeviceRoutes(app);

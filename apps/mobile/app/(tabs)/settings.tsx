@@ -249,6 +249,17 @@ export default function SettingsScreen() {
               </SettingsSurface>
             </View>
 
+            {/* ==================== CALENDAR ==================== */}
+            <SettingsSection title="Calendar">
+              <SettingsRow
+                icon="calendar"
+                title="Sync to Google Calendar"
+                subtitle="Show your fixtures in Google, Apple or Outlook Calendar"
+                onPress={() => router.push('/settings/calendar')}
+                isLast
+              />
+            </SettingsSection>
+
             {/* ==================== ALERTS ==================== */}
             <SettingsSection title="Alerts">
               <SettingsRow

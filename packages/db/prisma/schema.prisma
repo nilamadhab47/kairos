@@ -28,6 +28,9 @@ model User {
   onboardingDone Boolean @default(false) @map("onboarding_done")
   /// Encrypted Google Calendar tokens later — unused at auth time
   googleToken    Json?   @map("google_token")
+  /// Opaque token for the personal ICS calendar-subscription feed
+  /// (`/api/calendar/:token.ics`). Null until the user turns sync on.
+  calendarToken  String? @unique @map("calendar_token")
 
   sessions               Session[]
   accounts               Account[]
