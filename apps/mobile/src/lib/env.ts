@@ -1,21 +1,28 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+const RAILWAY_API = 'https://api-production-618f.up.railway.app';
+
 /**
  * Resolve the API base URL.
  *
- * In a dev client, prefer the same LAN host Metro is using (hostUri like
- * `192.168.1.5:8081`). That keeps phone ↔ API working even when the APK was
- * baked with a stale EXPO_PUBLIC_API_URL, and matches how Expo serves JS.
+ * HTTPS (Railway) always wins. That keeps Expo dev-client / Metro from
+ * rewriting a working production API to `http://<lan>:4000` — the usual
+ * cause of "Network request failed" when the local server is not running.
  *
- * Emulators:
- * - Android emulator → 10.0.2.2 (host loopback)
- * - iOS simulator → localhost
+ * Local LAN rewrite only happens when EXPO_PUBLIC_USE_LOCAL_API=1.
  */
 function resolveApiUrl(): string {
-  const baked = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+  const extra = Constants.expoConfig?.extra as { apiUrl?: string } | undefined;
+  const baked = (
+    process.env.EXPO_PUBLIC_API_URL ??
+    extra?.apiUrl ??
+    ''
+  ).replace(/\/$/, '');
 
-  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+  const useLocal = process.env.EXPO_PUBLIC_USE_LOCAL_API === '1';
+
+  if (useLocal && typeof __DEV__ !== 'undefined' && __DEV__) {
     const hostUri =
       Constants.expoConfig?.hostUri ??
       Constants.manifest2?.extra?.expoGo?.debuggerHost ??
@@ -29,17 +36,18 @@ function resolveApiUrl(): string {
     }
 
     if (Platform.OS === 'android') {
-      // Physical device without hostUri yet — fall through to baked URL.
-      // Emulator: 10.0.2.2 is the host machine.
       if (baked.includes('10.0.2.2')) return baked;
+      return 'http://10.0.2.2:4000';
     }
 
-    if (Platform.OS === 'ios' && (!baked || baked.includes('localhost'))) {
+    if (Platform.OS === 'ios') {
       return 'http://127.0.0.1:4000';
     }
   }
 
-  return baked || 'http://localhost:4000';
+  if (baked.startsWith('https://')) return baked;
+  if (baked) return baked;
+  return RAILWAY_API;
 }
 
 export const API_URL = resolveApiUrl();

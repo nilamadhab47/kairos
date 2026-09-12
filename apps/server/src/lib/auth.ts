@@ -29,6 +29,16 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL,
+  // Railway (and any reverse proxy) terminates TLS and forwards the client
+  // via X-Real-IP / X-Forwarded-For. Fastify already has trustProxy: true;
+  // Better Auth rate-limiting reads headers independently and needs this
+  // or every request shares one bucket.
+  advanced: {
+    ipAddress: {
+      ipAddressHeaders: ['x-real-ip', 'x-forwarded-for'],
+      trustedProxies: ['10.0.0.0/8', '100.64.0.0/10'],
+    },
+  },
   emailAndPassword: {
     enabled: true,
   },
@@ -54,9 +64,13 @@ export const auth = betterAuth({
     'kairo://',
     'kairo://*',
     env.APP_URL,
-    ...(env.NODE_ENV === 'development'
-      ? ['exp://', 'exp://**', 'exp://192.168.*.*:*/**', 'http://localhost:8081', 'http://127.0.0.1:8081']
-      : []),
+    env.API_URL,
+    env.BETTER_AUTH_URL,
+    'exp://',
+    'exp://**',
+    'http://localhost:8081',
+    'http://127.0.0.1:8081',
+    'http://192.168.*.*:*/**',
   ],
   databaseHooks: {
     user: {
